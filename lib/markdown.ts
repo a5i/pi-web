@@ -7,8 +7,10 @@ import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
 import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
 import remarkMath from "remark-math";
+import remarkMdx from "remark-mdx";
 import type { Plugin } from "unified";
 import type { Extension } from "micromark-util-types";
+import { remarkMdxPlaceholders } from "./markdown-mdx";
 
 // Link schemes of desktop apps that open a note, a file or a meeting (#1108).
 // A fixed list, not "any scheme but javascript:": the text comes from the model
@@ -601,6 +603,18 @@ export const markdownPreviewRemarkPlugins: ReactMarkdownOptions["remarkPlugins"]
   remarkSplitAutolinkLiterals,
   remarkCurrencySafeMath,
 ];
+// .mdx files parse with MDX syntax (JSX, expressions, ESM) and render the
+// placeholders lib/markdown-mdx.ts produces. MDX disables raw HTML, so
+// rehype-raw is a no-op there; ordering mirrors @mdx-js/mdx (frontmatter,
+// gfm, mdx) with the transforms after.
+export const markdownMdxPreviewRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
+  [remarkFrontmatter, ["yaml"]],
+  [remarkGfm, remarkGfmOptions],
+  remarkMdx,
+  remarkMdxPlaceholders,
+  remarkSplitAutolinkLiterals,
+  remarkCurrencySafeMath,
+];
 
 export const markdownRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
   rehypeRaw,
@@ -611,5 +625,26 @@ export const markdownRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
 export const markdownPreviewRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
   rehypeRaw,
   [rehypeSanitize, markdownSanitizeSchema],
+  [rehypeKatex, { throwOnError: false, strict: false }],
+];
+
+// The MDX preview emits placeholder elements through data.hProperties, and the
+// base schema only allows className on code — without these extensions
+// rehype-sanitize would strip every marker class and leave unstyled boxes.
+// Values are closed sets/patterns: nothing a markdown author writes can ride
+// along, because only lib/markdown-mdx.ts emits these class names.
+const markdownMdxSanitizeSchema = {
+  ...markdownSanitizeSchema,
+  attributes: {
+    ...markdownSanitizeSchema.attributes,
+    code: [["className", /^language-./, "math-inline", "math-display", "mdx-expression", "mdx-jsx-component-label"]],
+    p: [["className", "mdx-jsx-component-label"]],
+    div: [["className", "mdx-jsx-component", "mdx-esm-notice", /^mdx-esm-count-\d+$/]],
+    span: [["className", "mdx-jsx-component-inline"]],
+  },
+};
+export const markdownMdxPreviewRehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [
+  rehypeRaw,
+  [rehypeSanitize, markdownMdxSanitizeSchema],
   [rehypeKatex, { throwOnError: false, strict: false }],
 ];

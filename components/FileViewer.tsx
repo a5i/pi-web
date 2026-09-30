@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { Component } from "react";
 import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
 import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism-light";
 import renderSyntaxNode from "react-syntax-highlighter/dist/esm/create-element";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import { usePrismLanguages } from "@/hooks/usePrismLanguages";
 import {
@@ -21,10 +22,20 @@ import {
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { isExternalMarkdownHref, markdownAppUrlTransform, markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
+import {
+  isExternalMarkdownHref,
+  markdownAppUrlTransform,
+  markdownMdxPreviewRehypePlugins,
+  markdownMdxPreviewRemarkPlugins,
+  markdownPreviewRehypePlugins,
+  markdownPreviewRemarkPlugins,
+  markdownUrlTransform,
+  normalizeDisplayMath,
+} from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { DelimitedTable } from "./DelimitedTable";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
+import { LikeC4Fence, LikeC4Preview } from "./LikeC4Preview";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
@@ -1386,6 +1397,7 @@ function TextFileViewer({
         isDelimitedTable
         || (data.language === "markdown" && !data.truncated)
         || (data.language === "html" && (!data.truncated || data.size <= HTML_PREVIEW_MAX_BYTES))
+        || (data.language === "likec4" && !data.truncated)
       )
     ) {
       defaultPreviewEligibleRef.current = false;
@@ -1453,9 +1465,13 @@ function TextFileViewer({
   const isMarkdown = language === "markdown";
   // A table shows a loaded prefix too, without its cut last record; an HTML
   // preview fetches the whole file up to HTML_PREVIEW_MAX_BYTES.
+  // .mdx previews render JSX as placeholders (lib/markdown-mdx.ts); malformed
+  // MDX must fall back to the plain markdown pipeline, not blank the pane.
+  const isMdx = isMarkdown && getFileExt(filePath) === "mdx";
+  const isLikeC4 = language === "likec4";
   const hasPreview = isDelimitedTable || (isHtml
     ? !!data && (!data.truncated || data.size <= HTML_PREVIEW_MAX_BYTES)
-    : isMarkdown && !data?.truncated);
+    : (isMarkdown || isLikeC4) && !data?.truncated);
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
   // A partly loaded HTML file previews whole, so Load more belongs to its source view.
   const showLoadMore = !!data?.truncated && !(isHtml && effectiveDisplayMode === "preview");
@@ -1469,7 +1485,7 @@ function TextFileViewer({
     () => (
       <SyntaxHighlighter
         className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
-        language={language === "text" || !prismReady ? "plaintext" : language}
+        language={language === "text" || language === "likec4" || !prismReady ? "plaintext" : language}
         style={isDark ? fileViewerDarkTheme : vs}
         showLineNumbers
         lineNumberStyle={{
@@ -1651,6 +1667,80 @@ function TextFileViewer({
   const content = viewerContent;
   const markdownDirectory = getFileDirectory(filePath);
   const lines = sourceLines;
+  // Shared between the plain markdown and the MDX preview pipelines so the
+  // MDX error boundary can re-render with the plain plugins and lose nothing.
+  const markdownComponents: Components = {
+    code({ className, children, ...props }) {
+      const lang = className?.replace("language-", "").toLowerCase() ?? "";
+      const raw = String(children);
+      const isBlock = className?.includes("language-") || raw.includes("\n");
+      if (isBlock) {
+        if (lang === "mermaid") {
+          return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
+        }
+        if (lang === "likec4") {
+          return <LikeC4Fence code={raw.replace(/\n$/, "")} />;
+        }
+        return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
+    pre({ children }) {
+      // Render the code block directly — CodeBlock provides its own wrapping.
+      // For non-mermaid blocks, pass through to default pre rendering.
+      return <>{children}</>;
+    },
+    a({ href, children, ...props }) {
+      delete props.node;
+      const linkedFile = onOpenFile
+        ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
+        : null;
+      if (!linkedFile || !onOpenFile) {
+        // Like chat links: a web or app link must not replace Pi Web.
+        return isExternalMarkdownHref(href)
+          ? <a href={href} {...props} target="_blank" rel="noopener noreferrer">{children}</a>
+          : <a href={href} {...props}>{children}</a>;
+      }
+
+      const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+        if (!shouldOpenLocalFileInApp(event)) return;
+        event.preventDefault();
+        onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined);
+      };
+
+      return <a href={href} {...props} onClick={handleClick}>{children}</a>;
+    },
+    img({ src, alt, ...props }) {
+      delete props.node;
+      const imagePath = typeof src === "string"
+        ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
+        : null;
+      const imageSrc = imagePath
+        ? getFileApiUrl(imagePath, "read", sourceSessionId)
+        : src;
+      // Dynamic local paths are served directly by the file API.
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
+    },
+    div({ className, children, ...props }) {
+      delete props.node;
+      if (typeof className === "string" && className.includes("mdx-esm-notice")) {
+        const countMatch = className.match(/mdx-esm-count-(\d+)/);
+        const count = countMatch ? Number(countMatch[1]) : 1;
+        return (
+          <div className={className}>
+            <span className="mdx-esm-notice-label">{t("i18n.mdxImportsNotice", { count })}</span>
+            {children}
+          </div>
+        );
+      }
+      return <div className={className} {...props}>{children}</div>;
+    },
+  };
   const displayModes: DisplayMode[] = isDeletedDiff
     ? ["diff"]
     : [
@@ -1845,74 +1935,49 @@ function TextFileViewer({
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
              title={t("i18n.htmlPreview")}
           />
+        ) : isLikeC4 && effectiveDisplayMode === "preview" ? (
+          <LikeC4Preview
+            source={viewerContent}
+            onShowSource={() => updateDisplayMode("source")}
+          />
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
           <div
             className="markdown-body markdown-file-preview"
             style={{ padding: "24px 32px" }}
           >
             {frontmatter?.data && <FrontmatterCard data={frontmatter.data} />}
-            <ReactMarkdown
-              remarkPlugins={markdownPreviewRemarkPlugins}
-              rehypePlugins={markdownPreviewRehypePlugins}
-              urlTransform={onOpenFile ? markdownUrlTransform : markdownAppUrlTransform}
-              components={{
-                code({ className, children, ...props }) {
-                  const lang = className?.replace("language-", "").toLowerCase() ?? "";
-                  const raw = String(children);
-                  const isBlock = className?.includes("language-") || raw.includes("\n");
-                  if (isBlock) {
-                    if (lang === "mermaid") {
-                      return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
-                    }
-                    return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
-                  }
-                  return (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-                pre({ children }) {
-                  // Render the code block directly — CodeBlock provides its own wrapping.
-                  // For non-mermaid blocks, pass through to default pre rendering.
-                  return <>{children}</>;
-                },
-                a({ href, children, ...props }) {
-                  delete props.node;
-                  const linkedFile = onOpenFile
-                    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  if (!linkedFile || !onOpenFile) {
-                    // Like chat links: a web or app link must not replace Pi Web.
-                    return isExternalMarkdownHref(href)
-                      ? <a href={href} {...props} target="_blank" rel="noopener noreferrer">{children}</a>
-                      : <a href={href} {...props}>{children}</a>;
-                  }
-
-                  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-                    if (!shouldOpenLocalFileInApp(event)) return;
-                    event.preventDefault();
-                    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined);
-                  };
-
-                  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
-                },
-                img({ src, alt, ...props }) {
-                  delete props.node;
-                  const imagePath = typeof src === "string"
-                    ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  const imageSrc = imagePath
-                    ? getFileApiUrl(imagePath, "read", sourceSessionId)
-                    : src;
-                  // Dynamic local paths are served directly by the file API.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
-                },
-              }}
-            >
-              {markdownPreview}
-            </ReactMarkdown>
+            {isMdx ? (
+              <MdxPreviewBoundary
+                fallback={(
+                  <ReactMarkdown
+                    remarkPlugins={markdownPreviewRemarkPlugins}
+                    rehypePlugins={markdownPreviewRehypePlugins}
+                    urlTransform={onOpenFile ? markdownUrlTransform : markdownAppUrlTransform}
+                    components={markdownComponents}
+                  >
+                    {markdownPreview}
+                  </ReactMarkdown>
+                )}
+              >
+                <ReactMarkdown
+                  remarkPlugins={markdownMdxPreviewRemarkPlugins}
+                  rehypePlugins={markdownMdxPreviewRehypePlugins}
+                  urlTransform={onOpenFile ? markdownUrlTransform : markdownAppUrlTransform}
+                  components={markdownComponents}
+                >
+                  {markdownPreview}
+                </ReactMarkdown>
+              </MdxPreviewBoundary>
+            ) : (
+              <ReactMarkdown
+                remarkPlugins={markdownPreviewRemarkPlugins}
+                rehypePlugins={markdownPreviewRehypePlugins}
+                urlTransform={onOpenFile ? markdownUrlTransform : markdownAppUrlTransform}
+                components={markdownComponents}
+              >
+                {markdownPreview}
+              </ReactMarkdown>
+            )}
           </div>
         ) : isDelimitedTable && effectiveDisplayMode === "preview" ? (
           <DelimitedTable
@@ -1940,4 +2005,27 @@ function TextFileViewer({
       </div>
     </div>
   );
+}
+
+interface MdxPreviewBoundaryProps {
+  fallback: ReactNode;
+  children: ReactNode;
+}
+
+/**
+ * Malformed MDX (unclosed JSX, invalid expression) throws during
+ * ReactMarkdown's parse, which would blank the whole preview pane. Fall back
+ * to the plain markdown pipeline — the file is still readable, JSX appears as
+ * raw text, exactly what a non-MDX-aware viewer shows.
+ */
+class MdxPreviewBoundary extends Component<MdxPreviewBoundaryProps, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  render(): ReactNode {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
 }

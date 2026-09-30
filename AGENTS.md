@@ -57,6 +57,7 @@ app/api/
   home/route.ts                    GET user home directory
   open-in-explorer/route.ts        GET availability | POST open a cwd in the OS file manager (loopback only)
   files/[...path]/route.ts         GET ?type=list|read|download|meta|preview|watch | POST ?type=upload|upload-check|allow-link
+  likec4/route.ts                  POST compute LikeC4 views for .c4 preview
   file-index/route.ts              GET file list for @-mentions
   git/status/route.ts              GET changed files for a cwd
   git/diff/route.ts                GET diff of one changed file
@@ -133,6 +134,7 @@ lib/
   draft-store.ts            local draft persistence
   extension-ui-queue.ts     FIFO queues for extension dialogs and custom panels, by request id; isBlockingExtensionUiRequest() (which method a run waits on)
   markdown.ts               shared markdown helpers
+  markdown-mdx.ts           remark plugin: MDX JSX/expressions/ESM → preview placeholders
   markdown-blocks.ts        splitMarkdownBlocks(): where a streaming reply may be cut into blocks parsed apart
   highlight-queue.ts        code fences past a task's highlight budget get their colors in idle slices
   prism-languages.ts        loadPrismLanguages(): every Prism language in a chunk of its own, loaded when a highlighter first needs it
@@ -185,6 +187,8 @@ components/
   BranchNavigator.tsx      in-session branch switcher
   ChatMinimap.tsx          scroll minimap beside the message list
   MarkdownBody.tsx         markdown renderer
+  LikeC4Preview.tsx        .c4 diagram preview pane + ```likec4 fence (lazy renderer)
+  LikeC4DiagramChunk.tsx   lazy @likec4/diagram entry (ships its CSS in the chunk)
   ModelsConfig.tsx         Settings › Models: models.json editor
   EnabledModelsSection.tsx model switches inside ModelsConfig (enabledModels)
   OAuthPastePanel.tsx      paste box for a sign-in's redirected address or code (Models, MCP)
@@ -245,6 +249,16 @@ Design decisions and traps live in `docs/agents/`, one note per area. Read every
 
 - `/` renders entirely on the client, so one script chunk the browser cannot parse is a blank page. Next 16 targets Safari 16.4+; the `browserslist` in `package.json` lowers Safari and iOS to 16.2 so SWC turns class `static {}` blocks into private static fields. That covers Next's client runtime; other node_modules keep their syntax unless listed in `transpilePackages` (mermaid and `@mermaid-js/parser` are, for their lazy diagram chunks). Keep the other browserslist entries at Next's defaults.
 - Never write a RegExp lookbehind (`(?<=`, `(?<!`) in client code: SWC cannot downlevel it and Safari parses it only from 16.4. `lib/markdown.ts` emulates its leading lookbehinds with `replaceNotPrecededBy()`. A lookbehind built at runtime (`new RegExp("(?<=…)")` in `try`) fails only when run; that is how `lib/gfm-autolink-email-loader.cjs` fixes `mdast-util-gfm-autolink-literal`'s email regex. The loader is registered for webpack and Turbopack in `next.config.ts` and fails the build if that regex changes upstream.
+
+### LikeC4 (.c4) and MDX previews
+- `.c4`/`.likec4` files open a diagram preview: the server parses and lays out (`POST /api/likec4`, `lib/likec4-preview.ts`, headless `fromSource()` from `@likec4/language-services/node`, Graphviz via its bundled wasm — no network), and the browser lazily renders the returned `LayoutedView[]` with `@likec4/diagram`. The CLI package `likec4` is deliberately not used: it additionally depends on vite, esbuild and playwright. `@likec4/config` declares `bundle-require` + `esbuild` as peers, so both must stay installed.
+- The `@likec4/*` entries in `serverExternalPackages` are load-bearing: without them Turbopack tries to bundle the esbuild binary and its README through `@likec4/config` and the route fails to compile.
+- `react`/`react-dom` are exact-pinned to `19.2.8` because `@likec4/diagram` pins react `19.2.8` exactly. Any other root version makes npm nest a second React copy under `@likec4/diagram/node_modules`, and the diagram then crashes with a misleading "Do not call Hooks inside useEffect" error (that was the first preview crash). The same error appears if the renderer chunk loads through a hand-rolled `import().then(setState)` in an effect under Next 16 dev — use `React.lazy` + `Suspense` (`LikeC4DiagramChunk.tsx`), which also keeps the renderer's CSS out of every other load. `styles-font.css` is never imported: it pulls IBM Plex Sans from a CDN and pi-web renders offline.
+- The renderer chunk and Mantine/xyflow CSS load only when a LikeC4 preview or a ```likec4 fence renders; fences are wired in the FileViewer markdown preview only, not in chat, so Mantine's global styles never leak into `MarkdownBody`. A view title's `/` nests it into folders (`'Deployment / Production'`), an escaped `\/` is literal — `splitViewTitle()` parses that manually, no regex lookbehind. If the chunk cannot parse (old iOS Safari), the boundary shows a "use Source" message and the app keeps working.
+- v1 parses a single file: `include` directives surface as diagnostics. Watch-triggered reloads reuse the server's content-hash cache; flipping views or re-opening the file never recomputes.
+- `.mdx` previews parse MDX syntax (`markdownMdxPreviewRemarkPlugins` = remark-mdx + `remarkMdxPlaceholders`) and render it structurally: JSX components become labeled placeholder boxes (children still render), `{expressions}` become muted tokens, import/export statements collapse into notice chips. Nothing executes — expressions would run arbitrary JS in the page origin, and the imported components live in the project's build anyway. Malformed MDX throws during ReactMarkdown's render; `MdxPreviewBoundary` catches it and re-renders with the plain markdown pipeline.
+- rehype-sanitize's `defaultSchema` allows `className` only on `code`, so the MDX pipeline has its own schema (`markdownMdxSanitizeSchema`) admitting exactly the placeholder classes `lib/markdown-mdx.ts` emits — nothing a document author writes can forge them, because MDX disables raw HTML.
+- Tests: `lib/likec4-preview.test.mjs` runs the real language services (a few seconds); `e2e/likec4.mjs` bundles FileViewer with esbuild and mocks the API with server-computed views (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` for system Chrome).
 
 ## Pi Session File Format
 

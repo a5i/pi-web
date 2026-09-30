@@ -21,6 +21,7 @@ type CatppuccinIconName =
   | "javascript"
   | "javascript-react"
   | "json"
+  | "likec4"
   | "lock"
   | "npm-lock"
   | "bun-lock"
@@ -97,6 +98,8 @@ const EXTENSION_ICONS: Record<string, CatppuccinIconName> = {
   gql: "graphql",
   tf: "terraform",
   hcl: "terraform",
+  c4: "likec4",
+  likec4: "likec4",
   docx: "ms-word",
   pdf: "pdf",
   lock: "lock",

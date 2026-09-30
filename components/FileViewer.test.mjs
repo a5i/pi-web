@@ -12,7 +12,7 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   const viewer = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "TextFileViewer");
   const calculations = viewer.body.statements.filter((node) =>
     ts.isVariableStatement(node) && node.declarationList.declarations.some((declaration) =>
-      ["isDelimitedTable", "viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines"].includes(declaration.name.getText(file)),
+      ["isDelimitedTable", "viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isMdx", "isLikeC4", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines"].includes(declaration.name.getText(file)),
     ),
   ).map((node) => node.getText(file)).join("\n");
   const { outputText } = ts.transpileModule(`
@@ -21,6 +21,8 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
       const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
       const HTML_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
       const FILE_LINE_NUMBER_STYLE = {};
+      const getFileExt = () => "md";
+      const filePath = "/tmp/report.md";
       ${calculations}
       return lightweightSourceLines;
     };
@@ -31,7 +33,7 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   assert.equal(render({ ...large, content: "line\n".repeat(999) }, "source"), null);
   assert.equal(render(large, "diff", true), null);
   assert.equal(render(large, "source", true, true), null);
-  for (const language of ["html", "markdown"]) {
+  for (const language of ["html", "markdown", "likec4"]) {
     assert.equal(render({ ...large, language }, "preview"), null);
   }
   // A CSV/TSV table previews a loaded prefix too; markdown waits for the whole file.
@@ -60,4 +62,44 @@ test("partly loaded HTML previews up to the HTML cap; partly loaded markdown doe
   assert.equal(hasPreview({ truncated: false, size: cap + 1 }, true, false, false, cap), true);
   assert.equal(hasPreview(partial, false, true, false, cap), false);
   assert.equal(hasPreview({ ...partial, size: cap + 1 }, false, false, true, cap), true);
+});
+
+test("likec4 files get a preview pane with a source fallback", () => {
+  assert.match(source, /const isLikeC4 = language === "likec4";/);
+  assert.match(source, /: \(isMarkdown \|\| isLikeC4\) && !data\?\.truncated\);/);
+  // Prism has no likec4 grammar; refractor throws on unregistered names.
+  assert.match(source, /language === "text" \|\| language === "likec4" \|\| !prismReady \? "plaintext" : language/);
+  const branchStart = source.indexOf(") : isLikeC4 && effectiveDisplayMode === \"preview\" ? (");
+  assert.notEqual(branchStart, -1, "preview pane must branch for likec4");
+  assert.match(source.slice(branchStart, branchStart + 400), /<LikeC4Preview/);
+  assert.match(source.slice(branchStart, branchStart + 400), /onShowSource=\{\(\) => updateDisplayMode\("source"\)\}/);
+  // LikeC4 previews open in preview mode like markdown and HTML.
+  assert.match(source, /data\.language === "likec4" && !data\.truncated/);
+});
+
+test("markdown preview wires mermaid and likec4 fences", () => {
+  assert.match(source, /if \(lang === "mermaid"\) \{/);
+  assert.match(source, /if \(lang === "likec4"\) \{\s*return <LikeC4Fence code=\{raw\.replace\(\/\\n\$\/, ""\)\} \/>;/);
+});
+
+test("mdx previews parse MDX syntax behind a plain-markdown fallback boundary", () => {
+  assert.match(source, /const isMdx = isMarkdown && getFileExt\(filePath\) === "mdx";/);
+  assert.match(source, /remarkPlugins=\{markdownMdxPreviewRemarkPlugins\}/);
+  assert.match(source, /rehypePlugins=\{markdownMdxPreviewRehypePlugins\}/);
+  // The boundary's fallback re-renders with the plain pipeline so a broken
+  // .mdx still reads as markdown.
+  const boundaryStart = source.indexOf("<MdxPreviewBoundary");
+  assert.notEqual(boundaryStart, -1);
+  const boundaryBlock = source.slice(boundaryStart, source.indexOf("</MdxPreviewBoundary>", boundaryStart));
+  assert.match(boundaryBlock, /fallback=\{\(/);
+  assert.match(boundaryBlock, /remarkPlugins=\{markdownPreviewRemarkPlugins\}/);
+  assert.match(boundaryBlock, /components=\{markdownComponents\}/);
+  // import/export chips are labelled through the shared components map.
+  assert.match(source, /className\.includes\("mdx-esm-notice"\)/);
+  assert.match(source, /t\("i18n\.mdxImportsNotice", \{ count \}\)/);
+});
+
+test("markdown preview links carry PDF page fragments", () => {
+  assert.match(source, /parsePdfPageFragment/);
+  assert.match(source, /onOpenFile\(linkedFile, parsePdfPageFragment\(href\) \?\? undefined\)/);
 });

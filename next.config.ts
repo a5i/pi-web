@@ -52,6 +52,13 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",
+    // LikeC4 preview runs headless on the server; its node entry pulls the
+    // config loader (bundle-require → esbuild binary) and wasm-graphviz, none
+    // of which Turbopack can bundle.
+    "@likec4/language-services",
+    "@likec4/language-server",
+    "@likec4/config",
+    "@likec4/layouts",
   ],
   // Next 16 blocks cross-origin access to dev resources by default. Allow the
   // loopback and the RFC1918 LAN ranges so the dev server stays reachable
