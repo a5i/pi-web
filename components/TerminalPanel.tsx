@@ -39,13 +39,16 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     let connected = false;
     let exited = false;
     let inputFailed = false;
+    let fontsReady = false;
     setStatus("connecting");
     setError(null);
     setExitCode(null);
 
     const terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace",
+      fontFamily: '"MesloLGS NF", monospace',
+      fontWeight: 400,
+      fontWeightBold: 700,
       fontSize: 13,
       lineHeight: 1.25,
       scrollback: 8000,
@@ -64,7 +67,6 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     terminalRef.current = terminal;
     const fit = new FitAddon();
     terminal.loadAddon(fit);
-    terminal.open(container);
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown") return true;
       const key = event.key.toLowerCase();
@@ -85,7 +87,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       if (connected && !exited && !inputFailed) writer.write(data);
     });
     const fitAndResize = () => {
-      if (!container.offsetWidth || !container.offsetHeight) return;
+      if (!fontsReady || disposed || !container.offsetWidth || !container.offsetHeight) return;
       fit.fit();
     };
     const onResize = terminal.onResize(({ cols, rows }) => {
@@ -95,7 +97,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     resizeObserver.observe(container);
 
     const connect = () => {
-      if (disposed || exited || !navigator.onLine) return;
+      if (!fontsReady || disposed || exited || !navigator.onLine) return;
       events?.close();
       events = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
       events.onmessage = (message) => {
@@ -132,6 +134,22 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     };
 
     startRef.current = (async () => {
+      try {
+        const faces = await Promise.all([
+          '400 13px "MesloLGS NF"',
+          '700 13px "MesloLGS NF"',
+          'italic 400 13px "MesloLGS NF"',
+          'italic 700 13px "MesloLGS NF"',
+        ].map((font) => document.fonts.load(font)));
+        if (disposed) return;
+        if (faces.some((loaded) => loaded.length === 0)) terminal.options.fontFamily = "monospace";
+      } catch {
+        if (disposed) return;
+        terminal.options.fontFamily = "monospace";
+      }
+      // xterm measures character cells when opened, so open only after fonts settle.
+      terminal.open(container);
+      fontsReady = true;
       fitAndResize();
       if (restored || reconnectKey > 0) {
         // Restoring a tab must never silently launch a replacement shell.

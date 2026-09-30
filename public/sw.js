@@ -1,6 +1,7 @@
 const CACHE_PREFIX = "pi-web";
 const CACHE_VERSION = new URL(self.location.href).searchParams.get("v") || "dev";
-const STATIC_CACHE = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
+// Retire caches that may contain development chunks saved by older workers.
+const STATIC_CACHE = `${CACHE_PREFIX}-static-v2-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
   OFFLINE_URL,
@@ -156,7 +157,8 @@ async function cacheFirst(request) {
   if (cached) return cached;
 
   const response = await fetchWithTimeout(request, ASSET_TIMEOUT_MS);
-  if (response.ok && response.type === "basic") {
+  const cacheControl = response.headers.get("Cache-Control") ?? "";
+  if (response.ok && response.type === "basic" && !/\b(?:no-store|no-cache)\b/i.test(cacheControl)) {
     const cache = await caches.open(STATIC_CACHE);
     await cache.put(request, response.clone());
   }

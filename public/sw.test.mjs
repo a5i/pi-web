@@ -166,6 +166,24 @@ function dispatchFetch(url, { mode = "cors", method = "GET" } = {}) {
   return pending;
 }
 
+test("static assets marked no-store or no-cache are never persisted", async () => {
+  for (const cacheControl of ["no-store, must-revalidate", "no-cache", "public, max-age=31536000, immutable"]) {
+    const saved = [];
+    globalThis.caches = {
+      match: async () => undefined,
+      open: async () => ({ put: async (request) => saved.push(request.url) }),
+    };
+    globalThis.fetch = async () => {
+      const response = new Response("asset", { headers: { "Cache-Control": cacheControl } });
+      Object.defineProperty(response, "type", { value: "basic" });
+      return response;
+    };
+    const response = await dispatchFetch("https://pi.test/_next/static/chunks/app.js");
+    assert.equal(await response.text(), "asset");
+    assert.equal(saved.length, cacheControl.includes("immutable") ? 1 : 0);
+  }
+});
+
 /** fetch() that never settles until the signal it was handed is aborted. */
 function installHungNetwork() {
   let aborted = false;
