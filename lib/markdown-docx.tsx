@@ -16,6 +16,9 @@ export interface MarkdownDocxOptions {
 
 /** Export a frozen Markdown snapshot. No server-side remote URL fetching. */
 export async function createMarkdownDocx(options: MarkdownDocxOptions): Promise<Blob> {
+  // Keep docx pinned to 9.6.1: newer ImageRun constructors use an arrow-wrapped
+  // super() that our Next/SWC target turns into invalid JavaScript. Verify any
+  // upgrade with e2e/markdown-docx-next.mjs, not just the esbuild-based test.
   const d = await import("docx");
   const { toBlob } = await import("html-to-image");
   const parsed = parseFrontmatter(options.markdown);
