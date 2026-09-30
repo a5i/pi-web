@@ -51,6 +51,7 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
   sql: "sql", graphql: "graphql", gql: "graphql",
   dockerfile: "dockerfile", tf: "hcl", hcl: "hcl",
+  c4: "likec4", likec4: "likec4",
   env: "bash", gitignore: "bash", txt: "text",
   pdf: "pdf", docx: "word",
 };

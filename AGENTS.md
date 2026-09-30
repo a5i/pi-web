@@ -62,6 +62,7 @@ app/api/
   cwd/validate/route.ts           POST validate/select a cwd
   default-cwd/route.ts            POST create ~/pi-cwd/YYYYMMDD (local date)
   files/[...path]/route.ts        GET file contents for viewer
+  likec4/route.ts                 POST compute LikeC4 views for .c4 preview
   home/route.ts                   GET user home directory
   models/route.ts                 GET { models, modelList, defaultModel }
   models/enabled/route.ts         GET/PUT enabledModels switches for the Models panel
@@ -108,6 +109,7 @@ lib/
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
   markdown.ts          shared markdown helpers
+  markdown-mdx.ts      remark plugin: MDX JSX/expressions/ESM → preview placeholders
   gfm-autolink-email-loader.cjs  bundler loader: remark-gfm's email regex without a lookbehind literal (#753)
   node-cli.ts          locate bundled npm-cli.js / npx-cli.js so npm/npx spawn without a shell (Windows npm.cmd)
   npx.ts               npx runner used by skill install
@@ -131,6 +133,8 @@ components/
   BranchNavigator.tsx in-session branch switcher
   ChatMinimap.tsx     scroll minimap alongside the message list
   MarkdownBody.tsx    markdown renderer
+  LikeC4Preview.tsx   .c4 diagram preview pane + ```likec4 fence (lazy renderer)
+  LikeC4DiagramChunk.tsx  lazy @likec4/diagram entry (ships its CSS in the chunk)
   ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
   EnabledModelsSection.tsx  model switches inside ModelsConfig, backed by enabledModels
   AgentsConfig.tsx    built-in subagent toggle + agent profile editor
@@ -281,6 +285,16 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 
 ### Exported session HTML
 - `/api/sessions/[id]/export` delegates to pi's export helper, then patches recursive tree helpers in the generated HTML to iterative versions so very deep linear sessions do not overflow the browser call stack.
+
+### LikeC4 (.c4) and MDX previews
+- `.c4`/`.likec4` files open a diagram preview: the server parses and lays out (`POST /api/likec4`, `lib/likec4-preview.ts`, headless `fromSource()` from `@likec4/language-services/node`, Graphviz via its bundled wasm — no network), and the browser lazily renders the returned `LayoutedView[]` with `@likec4/diagram`. The CLI package `likec4` is deliberately not used: it additionally depends on vite, esbuild and playwright. `@likec4/config` declares `bundle-require` + `esbuild` as peers, so both must stay installed.
+- The `@likec4/*` entries in `serverExternalPackages` are load-bearing: without them Turbopack tries to bundle the esbuild binary and its README through `@likec4/config` and the route fails to compile.
+- `react`/`react-dom` are exact-pinned to `19.2.8` because `@likec4/diagram` pins react `19.2.8` exactly. Any other root version makes npm nest a second React copy under `@likec4/diagram/node_modules`, and the diagram then crashes with a misleading "Do not call Hooks inside useEffect" error (that was the first preview crash). The same error appears if the renderer chunk loads through a hand-rolled `import().then(setState)` in an effect under Next 16 dev — use `React.lazy` + `Suspense` (`LikeC4DiagramChunk.tsx`), which also keeps the renderer's CSS out of every other load. `styles-font.css` is never imported: it pulls IBM Plex Sans from a CDN and pi-web renders offline.
+- The renderer chunk and Mantine/xyflow CSS load only when a LikeC4 preview or a ```likec4 fence renders; fences are wired in the FileViewer markdown preview only, not in chat, so Mantine's global styles never leak into `MarkdownBody`. A view title's `/` nests it into folders (`'Deployment / Production'`), an escaped `\/` is literal — `splitViewTitle()` parses that manually, no regex lookbehind. If the chunk cannot parse (old iOS Safari), the boundary shows a "use Source" message and the app keeps working.
+- v1 parses a single file: `include` directives surface as diagnostics. Watch-triggered reloads reuse the server's content-hash cache; flipping views or re-opening the file never recomputes.
+- `.mdx` previews parse MDX syntax (`markdownMdxPreviewRemarkPlugins` = remark-mdx + `remarkMdxPlaceholders`) and render it structurally: JSX components become labeled placeholder boxes (children still render), `{expressions}` become muted tokens, import/export statements collapse into notice chips. Nothing executes — expressions would run arbitrary JS in the page origin, and the imported components live in the project's build anyway. Malformed MDX throws during ReactMarkdown's render; `MdxPreviewBoundary` catches it and re-renders with the plain markdown pipeline.
+- rehype-sanitize's `defaultSchema` allows `className` only on `code`, so the MDX pipeline has its own schema (`markdownMdxSanitizeSchema`) admitting exactly the placeholder classes `lib/markdown-mdx.ts` emits — nothing a document author writes can forge them, because MDX disables raw HTML.
+- Tests: `lib/likec4-preview.test.mjs` runs the real language services (a few seconds); `e2e/likec4.mjs` bundles FileViewer with esbuild and mocks the API with server-computed views (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` for system Chrome).
 
 ### Old Safari (iOS 16.2)
 - `/` renders entirely on the client, so one script chunk the browser cannot *parse* is a blank page, not a broken feature (#753). Next 16 compiles for Safari 16.4+ by default; the `browserslist` in `package.json` lowers Safari and iOS to 16.2 so SWC turns class `static {}` blocks into private static fields. That reaches Next's own client runtime, but other node_modules keep the syntax they ship unless they are in `transpilePackages`; mermaid and `@mermaid-js/parser` are listed there because their lazy diagram chunks are full of static blocks. Keep the other browserslist entries at Next's defaults.

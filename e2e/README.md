@@ -35,6 +35,14 @@ Coverage:
 - A local extension checks dialog keyboard navigation, Esc cancellation,
   collapse/expand draft preservation, countdown display, and server-side expiry.
 
+Standalone scripts run without the dev-server suite (they bundle components
+with esbuild and mock the API in headless Chromium): `markdown-docx.mjs`,
+`markdown-docx-next.mjs`, `pdf-page-fragment.mjs`, `themes.mjs`, and
+`likec4.mjs` (LikeC4 diagram preview with server-computed views, view
+switching, and MDX placeholder rendering). Point
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` at a system Chrome when the Playwright
+browser bundle is not installed.
+
 Model prompts, live model streaming, and agent execution are outside this suite.
 Failures save a screenshot, Playwright trace, and server log under
 `test-results/e2e/`; CI uploads that directory. Open a trace with

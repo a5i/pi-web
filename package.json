@@ -60,13 +60,15 @@
     "next": "16.3.6",
     "node-pty": "1.2.0-beta.15",
     "proper-lockfile": "4.1.2",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "semver": "7.8.5",
     "undici": "8.11.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@likec4/diagram": "1.59.4",
+    "@likec4/language-services": "1.59.4",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/js-yaml": "^4.0.9",
     "@types/mdast": "^4.0.4",
@@ -78,6 +80,7 @@
     "@types/semver": "7.8.0",
     "@types/web-push": "^3.6.4",
     "ansi_up": "^6.0.6",
+    "bundle-require": "^5.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "jiti": "^2.7.0",
@@ -94,6 +97,7 @@
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "remark-mdx": "3.1.1",
     "tailwindcss": "^4.2.2",
     "typescript": "^5"
   }
