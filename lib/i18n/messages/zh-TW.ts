@@ -5,6 +5,14 @@ export const zhTWLocale: LocalePlugin = {
   id: "zh-TW",
   label: "繁體中文",
   messages: {
+    "files.docxExport": "匯出 DOCX",
+    "files.docxPreparing": "正在準備 DOCX…",
+    "files.docxWithoutToc": "不含目錄",
+    "files.docxWithToc": "包含 Word 目錄",
+    "files.docxTocHint": "開啟後可能需要在 Word 中更新目錄。",
+    "files.docxTocTitle": "目錄",
+    "files.docxFailed": "DOCX 匯出失敗",
+
     "common.ok": "確定",
     "common.language": "語言",
     "common.models": "模型",
