@@ -5,6 +5,14 @@ export const zhCNLocale: LocalePlugin = {
   id: "zh-CN",
   label: "简体中文",
   messages: {
+    "files.docxExport": "导出 DOCX",
+    "files.docxPreparing": "正在准备 DOCX…",
+    "files.docxWithoutToc": "不含目录",
+    "files.docxWithToc": "包含 Word 目录",
+    "files.docxTocHint": "打开后可能需要在 Word 中更新目录。",
+    "files.docxTocTitle": "目录",
+    "files.docxFailed": "DOCX 导出失败",
+
     "common.ok": "确定",
     "common.language": "语言",
     "common.models": "模型",

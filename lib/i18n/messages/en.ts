@@ -5,6 +5,14 @@ export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    "files.docxExport": "Export DOCX",
+    "files.docxPreparing": "Preparing DOCX…",
+    "files.docxWithoutToc": "Without table of contents",
+    "files.docxWithToc": "With Word table of contents",
+    "files.docxTocHint": "Word may require updating the table of contents after opening.",
+    "files.docxTocTitle": "Table of contents",
+    "files.docxFailed": "DOCX export failed",
+
     "common.ok": "OK",
     "common.language": "Language",
     "common.models": "Models",

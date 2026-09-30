@@ -1139,6 +1139,34 @@ function TextFileViewer({
 }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
+  const [docxExporting, setDocxExporting] = useState(false);
+  const [docxMenuOpen, setDocxMenuOpen] = useState(false);
+  const [docxError, setDocxError] = useState<string | null>(null);
+  const docxBusyRef = useRef(false);
+  const docxMenuRef = useRef<HTMLDivElement | null>(null);
+  const docxGenerationRef = useRef(0);
+  useEffect(() => {
+    docxGenerationRef.current++;
+    setDocxMenuOpen(false);
+    setDocxError(null);
+    const generationRef = docxGenerationRef;
+    return () => { generationRef.current++; };
+  }, [filePath, sourceSessionId]);
+  useEffect(() => {
+    if (!docxMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !docxMenuRef.current?.contains(event.target)) setDocxMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDocxMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [docxMenuOpen]);
   const [data, setData] = useState<FileData | null>(null);
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
@@ -1517,6 +1545,31 @@ function TextFileViewer({
     requestedInitialDisplayMode,
   ]);
 
+  async function exportDocx(withToc: boolean) {
+    if (!data || data.truncated || docxBusyRef.current) return;
+    docxBusyRef.current = true;
+    const generation = docxGenerationRef.current;
+    setDocxExporting(true);
+    setDocxMenuOpen(false);
+    setDocxError(null);
+    try {
+      const { createMarkdownDocx } = await import("@/lib/markdown-docx");
+      const blob = await createMarkdownDocx({ markdown: data.content, filePath, cwd, sourceSessionId, withToc, tocTitle: t("files.docxTocTitle") });
+      if (generation !== docxGenerationRef.current) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = getFileName(filePath).replace(/\.[^.]+$/, "") + ".docx";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (cause) {
+      if (generation === docxGenerationRef.current) setDocxError(`${t("files.docxFailed")}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      docxBusyRef.current = false;
+      setDocxExporting(false);
+    }
+  }
+
   if (loading || (requestedInitialDisplayMode === "diff" && gitDiffLoading && !data)) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>
@@ -1551,6 +1604,7 @@ function TextFileViewer({
 
   return (
     <div className="file-viewer-shell" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" }}>
+      {docxError && <div role="alert" style={{ padding: "8px 12px", color: "#f87171", fontSize: 12 }}>{docxError}</div>}
       <div
         className="file-viewer-toolbar"
         style={{
@@ -1604,6 +1658,21 @@ function TextFileViewer({
                   </button>
                 );
               })}
+            </div>
+          )}
+
+          {isMarkdown && hasPreview && effectiveDisplayMode === "preview" && (
+            <div ref={docxMenuRef} style={{ position: "relative" }}>
+              <button type="button" className="file-viewer-mode-button" disabled={docxExporting} aria-expanded={docxMenuOpen} onClick={() => setDocxMenuOpen(open => !open)}>
+                {t(docxExporting ? "files.docxPreparing" : "files.docxExport")}
+              </button>
+              {docxMenuOpen && (
+                <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 20, minWidth: 240, padding: 8, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, boxShadow: "0 4px 16px #0003" }}>
+                  <button type="button" className="file-viewer-mode-button" style={{ display: "block", width: "100%", textAlign: "left" }} onClick={() => void exportDocx(false)}>{t("files.docxWithoutToc")}</button>
+                  <button type="button" className="file-viewer-mode-button" style={{ display: "block", width: "100%", textAlign: "left" }} onClick={() => void exportDocx(true)}>{t("files.docxWithToc")}</button>
+                  <p style={{ margin: "6px 4px", fontSize: 11, color: "var(--text-muted)" }}>{t("files.docxTocHint")}</p>
+                </div>
+              )}
             </div>
           )}
 
