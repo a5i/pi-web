@@ -216,6 +216,31 @@ test("manifest requests bypass the worker even with query strings and old cached
   assert.equal(networkRequests.length, 4);
 });
 
+test("static assets marked no-store or no-cache are never persisted", async () => {
+  for (const cacheControl of ["no-store, must-revalidate", "no-cache", "public, max-age=31536000, immutable"]) {
+    const saved = [];
+    globalThis.caches = {
+      match: async () => undefined,
+      open: async () => ({ put: async (request) => saved.push(request.url) }),
+    };
+    globalThis.fetch = async () => {
+      const response = new Response("asset", { headers: { "Cache-Control": cacheControl } });
+      Object.defineProperty(response, "type", { value: "basic" });
+      return response;
+    };
+    const { pending, background } = dispatchFetch("https://pi.test/_next/static/chunks/app.js");
+    const response = await pending;
+    assert.equal(await response.text(), "asset");
+
+    // A cacheable asset is written in the background; a no-store/no-cache
+    // response is never written at all, not even through waitUntil.
+    const cacheable = cacheControl.includes("immutable");
+    assert.equal(background.length, cacheable ? 1 : 0);
+    await Promise.all(background);
+    assert.equal(saved.length, cacheable ? 1 : 0);
+  }
+});
+
 /** fetch() that never settles until the signal it was handed is aborted. */
 function installHungNetwork() {
   let aborted = false;
