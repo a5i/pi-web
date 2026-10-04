@@ -343,7 +343,8 @@ test("leaves code and math line endings alone when keeping line breaks", () => {
   const emphasis = renderMarkdown("*one\ntwo* `a b`", { keepLineBreaks: true });
 
   assert.doesNotMatch(code, /<br/);
-  assert.match(code, /first[\s\S]*\n[\s\S]*second/);
+  // Code lines are separate .file-source-line rows, not newline-joined text.
+  assert.match(code, /first[\s\S]*data-line-number="2"[\s\S]*second/);
   assert.doesNotMatch(math, /<br/);
   assert.match(math, /<annotation encoding="application\/x-tex">x = 1\ny = 2<\/annotation>/);
   assert.match(emphasis, /<em>one<br\/>two<\/em>/);

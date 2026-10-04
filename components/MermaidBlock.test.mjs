@@ -10,7 +10,6 @@ const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { MermaidBlock, CodeBlock, downloadMermaidSvg } = await jiti.import("./MermaidBlock.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
-const { loadPrismLanguages } = await jiti.import("@/lib/prism-languages");
 
 // Simple sequenceDiagram for testing
 const mermaidSrc = `sequenceDiagram
@@ -69,36 +68,17 @@ function renderCode(props) {
   );
 }
 
-test("CodeBlock renders the same numbered lines without tokens until the Prism languages load", () => {
-  const html = renderCode({ code: "const x = 1;\nlet y = 2;", lang: "javascript" });
-
-  assert.doesNotMatch(html, /class="token/);
-  assert.equal(html.match(/react-syntax-highlighter-line-number/g)?.length, 2);
-  assert.match(html, /const x = 1;/);
-});
-
-test("CodeBlock highlights code when not streaming", async () => {
-  await loadPrismLanguages();
+test("CodeBlock highlights code when not streaming", () => {
   const html = renderCode({ code: "const x = 1;", lang: "javascript" });
 
-  assert.match(html, /class="token/);
+  assert.match(html, /class="sh__token--keyword"/);
   assert.match(html, /const/);
-});
-
-test("CodeBlock owns the pre background without a competing shorthand", () => {
-  for (const isStreaming of [false, true]) {
-    const html = renderCode({ code: "const x = 1;", lang: "javascript", isStreaming });
-    const pre = html.match(/<pre\b[^>]*>/)?.[0];
-    assert.ok(pre);
-    assert.match(pre, /background-color:color-mix/);
-    assert.doesNotMatch(pre, /(?:[;\"]|^)background:/);
-  }
 });
 
 test("CodeBlock renders plain text without tokenization while streaming", () => {
   const html = renderCode({ code: "const x = 1;", lang: "javascript", isStreaming: true });
 
-  assert.doesNotMatch(html, /class="token/);
+  assert.doesNotMatch(html, /class="sh__token--/);
   assert.match(html, /const x = 1;/);
 });
 

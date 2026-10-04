@@ -76,6 +76,17 @@
   --bg-subtle: rgba(0,0,0,0.03);
   --chat-content-max-width: 820px;
   --chat-content-font-size: 14px;
+  /* sugar-high token colors (components/SugarHighCode.tsx); mist and rose
+     inherit this light palette, pine the dark one below. */
+  --sh-class: #953800;
+  --sh-identifier: #24292f;
+  --sh-sign: #57606a;
+  --sh-property: #0550ae;
+  --sh-entity: #8250df;
+  --sh-jsxliterals: #6266d1;
+  --sh-string: #0a3069;
+  --sh-keyword: #cf222e;
+  --sh-comment: #6e7781;
 }
 
 html.dark,
@@ -96,6 +107,15 @@ html.dark,
   --assistant-bg: #1a1a1a;
   --tool-bg: #222222;
   --bg-subtle: rgba(255,255,255,0.04);
+  --sh-class: #ffa657;
+  --sh-identifier: #e6edf3;
+  --sh-sign: #8b949e;
+  --sh-property: #79c0ff;
+  --sh-entity: #d2a8ff;
+  --sh-jsxliterals: #7ee787;
+  --sh-string: #a5d6ff;
+  --sh-keyword: #ff7b72;
+  --sh-comment: #8b949e;
 }
 
 [data-theme="mist"] {
@@ -1370,6 +1390,38 @@ pre, code {
   background: var(--bg-hover);
 }
 
+/* OpenAPI preview (Stoplight Elements, <elements-api> web component). The
+   renderer's Tailwind preflight and variables live in the generated
+   styles/elements-scoped.css, scoped under .openapi-preview-scope and loaded
+   inside the lazy chunk; these rules only size the pane. The custom element
+   defaults to display:inline, so it must be blockified to fill the pane. */
+.openapi-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 320px;
+}
+.openapi-preview > elements-api {
+  display: block;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+.openapi-preview-notice {
+  flex: none;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-panel) 85%, var(--bg));
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+/* Keep pi-web's mono font inside the docs too — mosaic's own stack starts at
+   SF Mono and falls through to whatever the OS has. Specificity 0,2,0 so it
+   wins over the scoped stylesheet's own .openapi-preview-scope definitions. */
+.openapi-preview.openapi-preview-scope {
+  --font-mono: var(--font-noto-mono), ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
 /* MDX preview placeholders (lib/markdown-mdx.ts). JSX components render as
    labeled dashed boxes, expressions as muted {…} tokens, and import/export
    statements as notice chips — nothing is executed. */
@@ -2345,18 +2397,6 @@ pre, code {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-
-/* syntax highlighter line numbers */
-.markdown-body span.linenumber,
-span.linenumber {
-  color: var(--text-dim) !important;
-  font-style: normal !important;
-}
-
-/* Prism's markdown table tokens collide with Tailwind's display utility. */
-span.token.table {
-  display: inline;
 }
 
 @keyframes drop-zone-in {

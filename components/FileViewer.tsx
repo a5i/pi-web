@@ -2,14 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Component } from "react";
-import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
-import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism-light";
-import renderSyntaxNode from "react-syntax-highlighter/dist/esm/create-element";
-import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { useTheme } from "@/hooks/useTheme";
-import { usePrismLanguages } from "@/hooks/usePrismLanguages";
 import {
   DOCX_PREVIEW_MAX_BYTES,
   HTML_PREVIEW_MAX_BYTES,
@@ -35,7 +28,10 @@ import {
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { DelimitedTable } from "./DelimitedTable";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
+import { SugarHighCode } from "./SugarHighCode";
 import { LikeC4Fence, LikeC4Preview } from "./LikeC4Preview";
+import { OpenApiPreview } from "./OpenApiPreview";
+import { isOpenApiSpecContent } from "@/lib/openapi";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
@@ -73,7 +69,11 @@ interface FileData {
   truncated: boolean;
 }
 
-const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
+// Above this the pane renders unhighlighted lines — the cost that matters at
+// that size is tens of thousands of DOM nodes, not the sugar-high parse, which
+// even the largest normal source files (well past the old 1000-line cap) run
+// in milliseconds.
+const SOURCE_HIGHLIGHT_MAX_LINES = 10_000;
 const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   source: "Source",
   preview: "Preview",
@@ -86,19 +86,6 @@ const FILE_CODE_STYLE: CSSProperties = {
   fontSize: 13,
   lineHeight: 1.6,
 };
-
-// Prism's light theme colors <pre> with backgroundColor, its dark theme with
-// the background shorthand. The source view sets backgroundColor itself and the
-// dark theme's shorthand is dropped, as CodeBlock does: a theme switch then never
-// makes React remove one beside the other (it warned, and the view lost its
-// background).
-const fileViewerDarkTheme = {
-  ...vscDarkPlus,
-  'pre[class*="language-"]': {
-    ...vscDarkPlus['pre[class*="language-"]'],
-  },
-};
-delete fileViewerDarkTheme['pre[class*="language-"]'].background;
 
 const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   width: 48,
@@ -119,9 +106,11 @@ const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   verticalAlign: "top",
 };
 
-type SourceCodeRendererProps = Parameters<NonNullable<SyntaxHighlighterProps["renderer"]>>[0] & {
-  wrapLines: boolean;
-};
+// OpenAPI files keep their yaml/json language; the preview triggers on the
+// document's own version key in the head of the file (lib/openapi.ts).
+function isOpenApiLanguage(language: string | undefined, content: string | undefined): boolean {
+  return (language === "yaml" || language === "json") && isOpenApiSpecContent(content ?? "");
+}
 
 interface SelectedLineRange {
   startLine: number;
@@ -193,49 +182,6 @@ function getSelectedSourceLineRange(root: HTMLElement, selection: Selection | nu
 
   if (startLine > endLine) return null;
   return { startLine, endLine };
-}
-
-function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines }: SourceCodeRendererProps) {
-  return rows.map((row, lineIndex) => {
-    const children = row.children ?? [];
-    const firstChildClasses = children[0]?.properties?.className;
-    const hasLineNumber = Array.isArray(firstChildClasses)
-      && firstChildClasses.includes("react-syntax-highlighter-line-number");
-    const lineNumberNode = hasLineNumber ? children[0] : null;
-    const contentNodes = hasLineNumber ? children.slice(1) : children;
-
-    return (
-      <span
-        className="file-source-line"
-        data-line-number={lineIndex + 1}
-        key={`source-line-${lineIndex}`}
-        style={{ display: "flex", minWidth: "100%" }}
-      >
-        {lineNumberNode && renderSyntaxNode({
-          node: lineNumberNode,
-          stylesheet,
-          useInlineStyles,
-          key: `source-line-number-${lineIndex}`,
-        })}
-        <span
-          className="file-source-line-content"
-          style={{
-            flex: "1 1 auto",
-            minWidth: 0,
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-            whiteSpace: wrapLines ? "pre-wrap" : "pre",
-          }}
-        >
-          {contentNodes.map((node, tokenIndex) => renderSyntaxNode({
-            node,
-            stylesheet,
-            useInlineStyles,
-            key: `source-token-${lineIndex}-${tokenIndex}`,
-          }))}
-        </span>
-      </span>
-    );
-  });
 }
 
 function getFileApiUrl(
@@ -1165,7 +1111,6 @@ function TextFileViewer({
   onStateChange,
   watchEnabled = true,
 }: Props) {
-  const { isDark } = useTheme();
   const { t } = useI18n();
   const [docxExporting, setDocxExporting] = useState(false);
   const [docxMenuOpen, setDocxMenuOpen] = useState(false);
@@ -1398,6 +1343,7 @@ function TextFileViewer({
         || (data.language === "markdown" && !data.truncated)
         || (data.language === "html" && (!data.truncated || data.size <= HTML_PREVIEW_MAX_BYTES))
         || (data.language === "likec4" && !data.truncated)
+        || (isOpenApiLanguage(data.language, data.content) && !data.truncated)
       )
     ) {
       defaultPreviewEligibleRef.current = false;
@@ -1459,8 +1405,6 @@ function TextFileViewer({
   const viewerContent = data?.content ?? "";
   const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
   const language = data?.language ?? "text";
-  // Plain text needs no Prism languages; any other file loads them once.
-  const prismReady = usePrismLanguages(Boolean(data) && language !== "text");
   const isHtml = language === "html";
   const isMarkdown = language === "markdown";
   // A table shows a loaded prefix too, without its cut last record; an HTML
@@ -1469,55 +1413,41 @@ function TextFileViewer({
   // MDX must fall back to the plain markdown pipeline, not blank the pane.
   const isMdx = isMarkdown && getFileExt(filePath) === "mdx";
   const isLikeC4 = language === "likec4";
+  const isOpenApi = useMemo(
+    () => isOpenApiLanguage(language, viewerContent),
+    [language, viewerContent],
+  );
   const hasPreview = isDelimitedTable || (isHtml
     ? !!data && (!data.truncated || data.size <= HTML_PREVIEW_MAX_BYTES)
-    : (isMarkdown || isLikeC4) && !data?.truncated);
+    : (isMarkdown || isLikeC4 || isOpenApi) && !data?.truncated);
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
   // A partly loaded HTML file previews whole, so Load more belongs to its source view.
   const showLoadMore = !!data?.truncated && !(isHtml && effectiveDisplayMode === "preview");
   const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
     && !(effectiveDisplayMode === "diff" && hasGitDiff)
     && !(effectiveDisplayMode === "preview" && hasPreview);
-  // react-syntax-highlighter rebuilds every token element on each render, which
-  // costs hundreds of milliseconds on large files. Cache the rendered trees so
-  // unrelated re-renders (panel open/close, selection changes) reuse them as-is.
+  // SugarHighCode parses once per (content, language); this memo keeps unrelated
+  // re-renders (panel open/close, selection changes) from rebuilding the element
+  // tree on top of that.
   const highlightedSource = useMemo(
     () => (
-      <SyntaxHighlighter
+      <SugarHighCode
         className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
-        language={language === "text" || language === "likec4" || !prismReady ? "plaintext" : language}
-        style={isDark ? fileViewerDarkTheme : vs}
-        showLineNumbers
-        lineNumberStyle={{
-          ...FILE_LINE_NUMBER_STYLE,
-        }}
-        customStyle={{
-          margin: 0,
-          padding: 0,
-          border: 0,
-          backgroundColor: "var(--bg)",
-          ...FILE_CODE_STYLE,
+        code={viewerContent}
+        lang={language === "text" || language === "likec4" ? "text" : language}
+        lineNumbers
+        lineNumberStyle={FILE_LINE_NUMBER_STYLE}
+        wrapLines={wrapLines}
+        style={{
           width: wrapLines ? "100%" : "max-content",
           minWidth: "100%",
           minHeight: "100%",
-          overflow: "visible",
+          background: "var(--bg)",
+          ...FILE_CODE_STYLE,
         }}
-        codeTagProps={{
-          style: {
-            fontFamily: "var(--font-mono)",
-            fontWeight: "var(--font-mono-weight)",
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-          },
-        }}
-        renderer={(rendererProps) => (
-          <SourceCodeRenderer {...rendererProps} wrapLines={wrapLines} />
-        )}
-        wrapLongLines={wrapLines}
-      >
-        {viewerContent}
-      </SyntaxHighlighter>
+      />
     ),
-    [isDark, language, prismReady, viewerContent, wrapLines],
+    [language, viewerContent, wrapLines],
   );
   const lightweightSourceLines = useMemo(
     () => useLightweightSource ? sourceLines.map((line, lineIndex) => (
@@ -1940,6 +1870,8 @@ function TextFileViewer({
             source={viewerContent}
             onShowSource={() => updateDisplayMode("source")}
           />
+        ) : isOpenApi && effectiveDisplayMode === "preview" ? (
+          <OpenApiPreview source={viewerContent} filePath={filePath} />
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
           <div
             className="markdown-body markdown-file-preview"

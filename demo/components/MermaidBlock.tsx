@@ -1,12 +1,10 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
+import { SugarHighCode } from "./SugarHighCode";
 
 interface MermaidBlockProps {
   code: string;
@@ -249,6 +247,18 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
   );
 }
 
+const CODE_BLOCK_LINE_NUMBER_STYLE: CSSProperties = {
+  width: "2em",
+  minWidth: "2em",
+  paddingRight: 12,
+  textAlign: "right",
+  color: "var(--text-dim)",
+  fontStyle: "normal",
+  fontVariantNumeric: "tabular-nums",
+  userSelect: "none",
+  flexShrink: 0,
+};
+
 interface CodeBlockProps {
   code: string;
   lang: string;
@@ -256,29 +266,17 @@ interface CodeBlockProps {
   isStreaming?: boolean;
 }
 
-// Prism's light theme uses backgroundColor, while its dark theme uses the
-// background shorthand. Keep the pre background solely in customStyle so a
-// theme switch cannot remove/update one and reset the other in React's diff.
-const codeBlockDarkTheme = {
-  ...vscDarkPlus,
-  'pre[class*="language-"]': {
-    ...vscDarkPlus['pre[class*="language-"]'],
-  },
-};
-delete codeBlockDarkTheme['pre[class*="language-"]'].background;
-
 /**
  * Syntax-highlighted code block with copy button.
  * Used as the "source" view for mermaid blocks and for all non-mermaid code fences.
  *
  * Memoized: parent markdown re-renders (e.g. streaming updates elsewhere in
- * the message list) must not re-run Prism tokenization on unchanged code.
+ * the message list) must not re-run tokenization on unchanged code.
  * While the owning message is still streaming, the block renders as plain
  * monospace text — highlighting a growing block re-tokenizes all of it on
  * every chunk, which is the single most expensive part of streamed rendering.
  */
 export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isStreaming }: CodeBlockProps) {
-  const { isDark } = useTheme();
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
@@ -317,23 +315,20 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
           <code style={{ fontFamily: "var(--font-mono)" }}>{code}</code>
         </pre>
       ) : (
-        <SyntaxHighlighter
-          language={lang || "text"}
-          style={isDark ? codeBlockDarkTheme : vs}
-          showLineNumbers
-          lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
-          customStyle={{
-            margin: 0,
+        <SugarHighCode
+          code={code}
+          lang={lang || "text"}
+          lineNumbers
+          lineNumberStyle={CODE_BLOCK_LINE_NUMBER_STYLE}
+          style={{
+            overflowX: "auto",
             padding: "11px 13px",
             fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
             lineHeight: 1.62,
-            borderRadius: 0,
-            backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+            background: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+            fontFamily: "var(--font-mono)",
           }}
-          codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
-        >
-          {code}
-        </SyntaxHighlighter>
+        />
       )}
     </div>
   );

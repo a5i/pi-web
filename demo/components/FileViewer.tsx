@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent } from "react";
-import {
-  Prism as SyntaxHighlighter,
-  createElement as renderSyntaxNode,
-  type SyntaxHighlighterProps,
-} from "react-syntax-highlighter";
-import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import ReactMarkdown from "react-markdown";
-import { useTheme } from "@/hooks/useTheme";
 import {
   DOCX_PREVIEW_MAX_BYTES,
   getFileExt,
@@ -23,6 +15,7 @@ import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } 
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
+import { SugarHighCode } from "./SugarHighCode";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
@@ -61,7 +54,7 @@ interface FileData {
   truncated: boolean;
 }
 
-const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
+const SOURCE_HIGHLIGHT_MAX_LINES = 10_000;
 const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   source: "Source",
   preview: "Preview",
@@ -90,10 +83,6 @@ const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   userSelect: "none",
   flexShrink: 0,
   verticalAlign: "top",
-};
-
-type SourceCodeRendererProps = Parameters<NonNullable<SyntaxHighlighterProps["renderer"]>>[0] & {
-  wrapLines: boolean;
 };
 
 interface SelectedLineRange {
@@ -166,49 +155,6 @@ function getSelectedSourceLineRange(root: HTMLElement, selection: Selection | nu
 
   if (startLine > endLine) return null;
   return { startLine, endLine };
-}
-
-function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines }: SourceCodeRendererProps) {
-  return rows.map((row, lineIndex) => {
-    const children = row.children ?? [];
-    const firstChildClasses = children[0]?.properties?.className;
-    const hasLineNumber = Array.isArray(firstChildClasses)
-      && firstChildClasses.includes("react-syntax-highlighter-line-number");
-    const lineNumberNode = hasLineNumber ? children[0] : null;
-    const contentNodes = hasLineNumber ? children.slice(1) : children;
-
-    return (
-      <span
-        className="file-source-line"
-        data-line-number={lineIndex + 1}
-        key={`source-line-${lineIndex}`}
-        style={{ display: "flex", minWidth: "100%" }}
-      >
-        {lineNumberNode && renderSyntaxNode({
-          node: lineNumberNode,
-          stylesheet,
-          useInlineStyles,
-          key: `source-line-number-${lineIndex}`,
-        })}
-        <span
-          className="file-source-line-content"
-          style={{
-            flex: "1 1 auto",
-            minWidth: 0,
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-            whiteSpace: wrapLines ? "pre-wrap" : "pre",
-          }}
-        >
-          {contentNodes.map((node, tokenIndex) => renderSyntaxNode({
-            node,
-            stylesheet,
-            useInlineStyles,
-            key: `source-token-${lineIndex}-${tokenIndex}`,
-          }))}
-        </span>
-      </span>
-    );
-  });
 }
 
 function getFileApiUrl(
@@ -1139,7 +1085,6 @@ function TextFileViewer({
   onStateChange,
   watchEnabled = true,
 }: Props) {
-  const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
@@ -1377,45 +1322,28 @@ function TextFileViewer({
   const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
     && !(effectiveDisplayMode === "diff" && hasGitDiff)
     && !(effectiveDisplayMode === "preview" && hasPreview);
-  // react-syntax-highlighter rebuilds every token element on each render, which
-  // costs hundreds of milliseconds on large files. Cache the rendered trees so
-  // unrelated re-renders (panel open/close, selection changes) reuse them as-is.
+  // SugarHighCode parses once per (content, language); this memo keeps unrelated
+  // re-renders (panel open/close, selection changes) from rebuilding the element
+  // tree on top of that.
   const highlightedSource = useMemo(
     () => (
-      <SyntaxHighlighter
+      <SugarHighCode
         className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
-        language={language === "text" ? "plaintext" : language}
-        style={isDark ? vscDarkPlus : vs}
-        showLineNumbers
-        lineNumberStyle={{
-          ...FILE_LINE_NUMBER_STYLE,
-        }}
-        customStyle={{
-          margin: 0,
-          padding: 0,
-          border: 0,
-          background: "var(--bg)",
-          ...FILE_CODE_STYLE,
+        code={viewerContent}
+        lang={language === "text" ? "text" : language}
+        lineNumbers
+        lineNumberStyle={FILE_LINE_NUMBER_STYLE}
+        wrapLines={wrapLines}
+        style={{
           width: wrapLines ? "100%" : "max-content",
           minWidth: "100%",
           minHeight: "100%",
-          overflow: "visible",
+          background: "var(--bg)",
+          ...FILE_CODE_STYLE,
         }}
-        codeTagProps={{
-          style: {
-            fontFamily: "var(--font-mono)",
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-          },
-        }}
-        renderer={(rendererProps) => (
-          <SourceCodeRenderer {...rendererProps} wrapLines={wrapLines} />
-        )}
-        wrapLongLines={wrapLines}
-      >
-        {viewerContent}
-      </SyntaxHighlighter>
+      />
     ),
-    [isDark, language, viewerContent, wrapLines],
+    [language, viewerContent, wrapLines],
   );
   const lightweightSourceLines = useMemo(
     () => useLightweightSource ? sourceLines.map((line, lineIndex) => (

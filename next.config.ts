@@ -42,8 +42,19 @@ const nextConfig: NextConfig = {
     return config;
   },
   // Node modules keep the syntax they ship unless listed here, and mermaid's
-  // lazy diagram chunks are full of class `static {}` blocks (#753).
-  transpilePackages: ["mermaid", "@mermaid-js/parser"],
+  // lazy diagram chunks are full of class `static {}` blocks (#753). The
+  // Stoplight packages behind the OpenAPI preview are clean today, but they
+  // are transpiled too so a future update cannot ship lookbehinds or static
+  // blocks to iOS 16.2 unnoticed.
+  transpilePackages: [
+    "mermaid",
+    "@mermaid-js/parser",
+    "@stoplight/elements",
+    "@stoplight/elements-core",
+    "@stoplight/mosaic",
+    "@stoplight/mosaic-code-viewer",
+    "@stoplight/mosaic-code-editor",
+  ],
   serverExternalPackages: [
     "node-pty",
     "undici",
@@ -59,6 +70,10 @@ const nextConfig: NextConfig = {
     "@likec4/language-server",
     "@likec4/config",
     "@likec4/layouts",
+    // The OpenAPI bundler runs headless on the server; keep its lazy
+    // resolvers out of the server bundle graph entirely.
+    "@apidevtools/swagger-parser",
+    "@apidevtools/json-schema-ref-parser",
   ],
   // Next 16 blocks cross-origin access to dev resources by default. Allow the
   // loopback and the RFC1918 LAN ranges so the dev server stays reachable
