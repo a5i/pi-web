@@ -64,7 +64,7 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   }
   // A CSV/TSV table previews a loaded prefix too; markdown waits for the whole file.
   assert.equal(render({ ...large, truncated: true }, "preview", false, false, false, "/tmp/data.csv"), null);
-  assert.equal(render({ ...large, language: "markdown", truncated: true }, "preview").length, 1_001);
+  assert.equal(render({ ...large, language: "markdown", truncated: true }, "preview").length, 10_001);
   // A partly loaded HTML file previews too: the preview fetches it whole.
   assert.equal(render({ ...large, language: "html", truncated: true, size: 900 * 1024 }, "preview"), null);
   for (const mode of ["source", "diff", "preview"]) {
@@ -113,12 +113,12 @@ test("openapi specs get a preview pane behind a content sniff", () => {
   // own version key (lib/openapi.ts), not on a new server language.
   assert.match(source, /import \{ isOpenApiSpecContent \} from "@\/lib\/openapi";/);
   assert.match(source, /\(language === "yaml" \|\| language === "json"\) && isOpenApiSpecContent\(content \?\? ""\)/);
-  assert.match(source, /const hasPreview = !data\?\.truncated && \(isHtml \|\| isMarkdown \|\| isLikeC4 \|\| isOpenApi\);/);
+  assert.match(source, /: \(isMarkdown \|\| isLikeC4 \|\| isOpenApi\) && !data\?\.truncated\);/);
   const branchStart = source.indexOf(") : isOpenApi && effectiveDisplayMode === \"preview\" ? (");
   assert.notEqual(branchStart, -1, "preview pane must branch for openapi");
   assert.match(source.slice(branchStart, branchStart + 200), /<OpenApiPreview source=\{viewerContent\}/);
   // OpenAPI previews open in preview mode like markdown, HTML and likec4.
-  assert.match(source, /\|\| isOpenApiLanguage\(data\?\.language, data\?\.content\)/);
+  assert.match(source, /\|\| \(isOpenApiLanguage\(data\.language, data\.content\) && !data\.truncated\)/);
 });
 
 test("mdx previews parse MDX syntax behind a plain-markdown fallback boundary", () => {
