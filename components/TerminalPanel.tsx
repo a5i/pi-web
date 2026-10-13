@@ -80,8 +80,13 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
 
     const readTerminalFont = () => {
       const style = getComputedStyle(container);
+      const preferred = style.getPropertyValue("--font-mono").trim();
+      // Meslo stays the terminal's own default (its faces are preloaded below); an
+      // explicit mono preference from Settings replaces it, which is visible here as
+      // the computed --font-mono diverging from --font-mono-default.
+      const hasMonoPreference = preferred !== style.getPropertyValue("--font-mono-default").trim();
       return {
-        fontFamily: style.getPropertyValue("--font-mono").trim() || "monospace",
+        fontFamily: hasMonoPreference && preferred ? preferred : '"MesloLGS NF", monospace',
         // Base weights stop at 600, so xterm's default bold (700) stays heavier.
         fontWeight: readFontWeight(style.getPropertyValue("--font-mono-weight")),
       };
@@ -150,7 +155,12 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       events?.close();
       events = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
       events.onmessage = (message) => {
-        const event = JSON.parse(message.data) as TerminalEvent;
+        let event: TerminalEvent;
+        try {
+          event = JSON.parse(message.data) as TerminalEvent;
+        } catch {
+          return; // A malformed event says nothing about the stream's offset.
+        }
         if (event.type === "output") {
           if (event.reset) terminal.reset();
           else if (offset !== undefined && event.offset <= offset) return;
