@@ -2,8 +2,14 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 
 export const PI_WEB_AUTH_USERNAME = "pi";
 export const PI_WEB_SESSION_COOKIE = "pi_web_session";
-export const PI_WEB_SESSION_MAX_AGE = 60 * 60 * 24 * 30;
+export const PI_WEB_SESSION_MAX_AGE = 60 * 60 * 24 * 365;
 
+
+/** https when the request came through TLS or a TLS-terminating proxy. */
+export function isSecureWebRequest(request: Request): boolean {
+  return new URL(request.url).protocol === "https:"
+    || request.headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim() === "https";
+}
 function hashSecret(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
 }

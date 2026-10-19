@@ -103,6 +103,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // The sign-in link carries the owner's token in its query; pages must
+        // never name this origin to a third party that linked from here.
+        source: "/:path*",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
         source: "/",
         headers: [
           { key: "Cache-Control", value: "private, no-cache, max-age=0, must-revalidate" },

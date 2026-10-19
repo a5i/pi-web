@@ -10,6 +10,8 @@ const { openInBrowser } = require("./browser-opener");
 const { runUpdate } = require("./pi-web-update");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const records = require("./run-records");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { readTokenFile } = require("./pi-web-token");
 
 const STOP_TIMEOUT_MS = 10_000;
 const STOP_POLL_MS = 200;
@@ -62,6 +64,21 @@ async function stopServer(record, {
   return 0;
 }
 
+// A token-auth server opens its sign-in link, so the browser lands signed
+// in. The record carries the token file's path (never the token); a missing
+// or unreadable file falls back to the plain URL, where the login page still
+// accepts the token pasted as the password.
+function openUrlForRecord(record, { readToken = readTokenFile } = {}) {
+  if (!record.tokenAuth) return record.url;
+  let token;
+  try {
+    token = readToken(record.tokenAuth);
+  } catch {
+    return record.url;
+  }
+  return token === undefined ? record.url : `${record.url}/login?token=${token}`;
+}
+
 async function runCommand(options, {
   runDir = records.getRunDir(),
   pkgDir = path.join(__dirname, ".."),
@@ -95,8 +112,9 @@ async function runCommand(options, {
         if (code === 0) records.removeRunRecord(runDir, selected.record.pid);
         return code;
       }
-      log(`Opening ${selected.record.url}`);
-      open(selected.record.url);
+      const url = openUrlForRecord(selected.record, { readTokenFile });
+      log(`Opening ${url}`);
+      open(url);
       return 0;
     }
     case "update":

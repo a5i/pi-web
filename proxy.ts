@@ -9,11 +9,16 @@ import {
   isApiRequestHostAllowed,
 } from "@/lib/request-security";
 import {
-  isValidWebSessionToken,
+  createWebSessionToken,
   isValidBasicAuthorization,
+  isValidWebPassword,
+  isValidWebSessionToken,
   isWebPasswordEnabled,
+  isSecureWebRequest,
   PI_WEB_SESSION_COOKIE,
+  PI_WEB_SESSION_MAX_AGE,
 } from "@/lib/web-auth";
+import { safeLoginDestination } from "@/lib/login-destination";
 
 function tooManyAttempts(retryAfterMs: number): NextResponse {
   return new NextResponse("Too many failed attempts", {
@@ -23,6 +28,43 @@ function tooManyAttempts(retryAfterMs: number): NextResponse {
       "Retry-After": String(retryAfterSeconds(retryAfterMs)),
     },
   });
+}
+
+/**
+ * Sign a browser in from a link (`/login?token=…`, printed by `pi-web --token`).
+ * The token is checked exactly like the login form's password, through the
+ * shared throttle: the block runs before validation, a wrong token records a
+ * failure and bounces to a bare /login without echoing the guess, and — like
+ * Basic, unlike the form — a success never resets the counter, because
+ * anything may fetch a link (terminal previews, link checkers) and each valid
+ * fetch must not hand an interleaved guesser a fresh short block. A valid
+ * token gets the session cookie on a redirect to a clean URL, so the token
+ * leaves the address bar (and the back-button history) immediately.
+ */
+function signInWithToken(request: NextRequest, token: string, password: string): NextResponse {
+  const retryAfterMs = getAuthRetryAfterMs();
+  if (retryAfterMs > 0) return tooManyAttempts(retryAfterMs);
+
+  if (!isValidWebPassword(token, password)) {
+    recordAuthFailure();
+    return NextResponse.redirect(new URL("/login", request.url), 303);
+  }
+
+  const destination = safeLoginDestination(
+    request.nextUrl.searchParams.get("next"),
+    new URL(request.url).origin,
+  );
+  const response = NextResponse.redirect(new URL(destination, request.url), 303);
+  response.cookies.set({
+    name: PI_WEB_SESSION_COOKIE,
+    value: createWebSessionToken(password),
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isSecureWebRequest(request),
+    path: "/",
+    maxAge: PI_WEB_SESSION_MAX_AGE,
+  });
+  return response;
 }
 
 export function proxy(request: NextRequest) {
@@ -62,9 +104,18 @@ export function proxy(request: NextRequest) {
     if (!authenticated) recordAuthFailure();
   }
   if (request.nextUrl.pathname === "/login") {
-    return authenticated
-      ? NextResponse.redirect(new URL("/", request.url))
-      : NextResponse.next();
+    if (authenticated) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+    // A sign-in link printed by `pi-web --token`. Validated below through the
+    // shared throttle — this branch sits above the /api/web-auth exemption,
+    // so the link is no unthrottled password oracle — and the reply is always
+    // a redirect to a URL without the token.
+    const token = request.nextUrl.searchParams.get("token");
+    if (token !== null) {
+      return signInWithToken(request, token, password);
+    }
+    return NextResponse.next();
   }
   if (request.nextUrl.pathname === "/api/web-auth") return NextResponse.next();
 

@@ -60,6 +60,11 @@ pi-web update [--check] # 更新全局 npm 安装
 | `--port <端口>`、`-p <端口>` 或 `PORT` | 服务端口 | `30141` |
 | `--hostname <主机>`、`-H <主机>` 或 `PI_WEB_HOSTNAME` | 监听主机名 | `127.0.0.1` |
 | `--no-open` 或 `PI_WEB_NO_OPEN=1` | 不自动打开浏览器 | 自动打开 |
+| `--token` | 令牌登录：启动时打印一条 `…/login?token=…` 链接和二维码 | 关闭 |
+| `--rotate-token` | 先更换登录令牌（使用旧链接的设备全部退出登录）；隐含 `--token` | — |
+| `--token-file <路径>` 或 `PI_WEB_TOKEN_FILE` | 登录令牌的存放位置 | `~/.pi/agent/pi-web/auth-token` |
+| `--access <模式>` | 设备如何连接 Pi Web：`local`、`lan`、`cloudflare` 或 `tailscale`；跳过选择菜单 | 终端中的菜单 |
+| `-y` | 沿用上次的选择，不显示菜单 | — |
 | `PI_WEB_APP_NAME` | PWA manifest 的 `name` 和 `short_name`；去除首尾空白，空值使用默认值 | `Pi Web` |
 | `PI_WEB_ALLOWED_HOSTS` | 额外允许的代理或自定义主机名，多个值用逗号分隔，必须精确匹配 | 未设置 |
 | `PI_WEB_PASSWORD` | 启用浏览器密码登录；API 客户端可使用用户名为 `pi` 的 Basic Auth | 不启用认证 |
@@ -82,6 +87,21 @@ PI_WEB_PASSWORD='足够长的随机密码' pi-web --hostname 0.0.0.0
 ```
 
 密码认证不会加密连接。不要通过明文 HTTP 将 Pi Web 暴露到互联网；远程访问应使用可信反向代理提供 HTTPS，或通过可信 VPN。如果反向代理传递外部主机名，请把该名称精确加入 `PI_WEB_ALLOWED_HOSTS`。这个白名单不会改变 Pi Web 的监听地址。
+
+### 令牌登录
+
+`pi-web --token` 将一个随机登录令牌保存在文件中（默认 `~/.pi/agent/pi-web/auth-token`），并在启动时打印 `http://…/login?token=…` 链接和二维码。每个浏览器打开一次该链接即可：Cookie 有效期一年，且令牌会立即从地址栏消失。链接就是所有者的钥匙——任何拿到它的人都能登录，请妥善保管。`--rotate-token` 会签发新令牌，并使使用旧链接的所有设备退出登录。该令牌也可以当作密码使用——在登录表单中，或在 API Basic Auth 中配合用户名 `pi`。
+
+### 选择连接方式
+
+在终端中运行 `pi-web` 时，它会询问你的设备应如何连接：
+
+- **仅本机** — `http://127.0.0.1:<端口>`
+- **局域网** — 所有网卡，明文 http
+- **Cloudflare Tunnel** — 公网 https 链接，无需账号；会先征得同意下载 `cloudflared`（约 40 MB）
+- **Tailscale** — 仅你的 tailnet
+
+选择决定 Pi Web 绑定的地址，并在启用 `--token` 时决定启动器打印哪条登录链接和二维码；选择会被记住并在下次预选。用 `--access <模式>` 或 `PI_WEB_ACCESS` 跳过菜单，用 `-y` 沿用上次的选择，用 `--hostname` 绑定指定地址（同时关闭菜单）。快速隧道的地址在每次 `cloudflared` 启动时都会变化；地址改变时启动器会自动重启服务器。
 
 ### HTTP 代理
 

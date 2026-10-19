@@ -16,6 +16,10 @@ function wireChildProcessLifecycle(
   parentProcess = process,
   timeoutMs = shutdownTimeoutMs,
   log = console.error,
+  // A planned restart (a new tunnel address respawns the server) sets
+  // `restarting` before killing the child, so its exit unwires quietly
+  // instead of ending the launcher.
+  state = { restarting: false },
 ) {
   const signalHandlers = new Map();
   let shutdownTimer;
@@ -66,6 +70,11 @@ function wireChildProcessLifecycle(
   child.once("exit", (code, signal) => {
     unwire();
 
+    // A planned restart: the launcher spawns a replacement, so this exit
+    // must not end the process or report the server as gone.
+    if (state.restarting) {
+      return;
+    }
     // A shutdown the user asked for needs no explanation; anything else left
     // the window closing with no stated reason.
     if (!shuttingDown) {

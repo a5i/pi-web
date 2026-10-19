@@ -58,6 +58,11 @@ For port and hostname, command-line options override the corresponding environme
 | `--port <port>`, `-p <port>`, or `PORT` | Server port | `30141` |
 | `--hostname <host>`, `-H <host>`, or `PI_WEB_HOSTNAME` | Bind hostname | `127.0.0.1` |
 | `--no-open` or `PI_WEB_NO_OPEN=1` | Do not open a browser automatically | Browser opens |
+| `--token` | Sign-in token auth: print a `…/login?token=…` link (and a QR code) at startup | Off |
+| `--rotate-token` | Replace the sign-in token first (signs out every device that used the old link); implies `--token` | — |
+| `--token-file <path>` or `PI_WEB_TOKEN_FILE` | Where the sign-in token lives | `~/.pi/agent/pi-web/auth-token` |
+| `--access <mode>` | How devices reach Pi Web: `local`, `lan`, `cloudflare`, or `tailscale`; skips the access menu | Menu in a terminal |
+| `-y` | Reuse the last access choice, without the menu | — |
 | `PI_WEB_APP_NAME` | PWA manifest `name` and `short_name`; surrounding whitespace is trimmed, empty values use the default | `Pi Web` |
 | `PI_WEB_SKIP_VERSION_CHECK=1` | Disable Pi Web update checks | Unset |
 | `PI_WEB_ALLOWED_HOSTS` | Additional exact proxy or custom hostnames, comma-separated | Unset |
@@ -83,6 +88,21 @@ PI_WEB_PASSWORD='a-long-random-password' pi-web --hostname 0.0.0.0
 ```
 
 Password authentication does not encrypt the connection. Do not expose Pi Web over plain HTTP to the internet; use HTTPS through a trusted reverse proxy or a trusted VPN. If a reverse proxy sends an external hostname, add that exact name to `PI_WEB_ALLOWED_HOSTS`. This allow-list does not change the address Pi Web binds to.
+
+### Token Sign-In
+
+`pi-web --token` keeps a random sign-in token in a file (default `~/.pi/agent/pi-web/auth-token`) and prints a `http://…/login?token=…` link, with a QR code, at startup. Open the link once per browser: the cookie it sets lasts a year, and the token leaves the address bar at once. The link is the owner's key — anyone who has it can sign in, so keep it private. `--rotate-token` issues a fresh token and signs out every device that used the old link. The token also works as the password: for the login form, or for API Basic Auth with username `pi`.
+
+### Choosing how devices connect
+
+Run `pi-web` in a terminal and it asks how your devices should reach it:
+
+- **This device only** — `http://127.0.0.1:<port>`
+- **Local network** — every interface, plain http
+- **Cloudflare Tunnel** — a public https link, no account; downloads `cloudflared` first (about 40 MB) after asking
+- **Tailscale** — your tailnet only
+
+The choice sets the address Pi Web binds to and, with `--token`, which sign-in link and QR code the launcher prints; it is remembered and preselected next time. Skip the menu with `--access <mode>` or `PI_WEB_ACCESS`, reuse the remembered choice with `-y`, or bind a specific address with `--hostname` (which disables the menu). A quick tunnel's address is new each time `cloudflared` starts; the launcher restarts the server automatically when it changes.
 
 ### HTTP Proxy
 
