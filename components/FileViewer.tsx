@@ -33,7 +33,7 @@ import { LikeC4Fence, LikeC4Preview } from "./LikeC4Preview";
 import { OpenApiPreview } from "./OpenApiPreview";
 import { isOpenApiSpecContent } from "@/lib/openapi";
 import { FrontmatterCard } from "./FrontmatterCard";
-import { parseUnifiedPatch } from "@/lib/patch";
+import { diffGapLabel, parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
 import {
@@ -87,6 +87,8 @@ const FILE_CODE_STYLE: CSSProperties = {
   lineHeight: 1.6,
 };
 
+// `lineHeight` is FILE_CODE_STYLE's 13px * 1.6, so both columns share one line
+// box; a code-font change must move it with fontSize.
 const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   width: 48,
   minWidth: 48,
@@ -104,6 +106,24 @@ const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   userSelect: "none",
   flexShrink: 0,
   verticalAlign: "top",
+};
+
+// The gutter stays put while a wide line scrolls sideways: `position: sticky`
+// against the viewer's own scrolling box (`.file-viewer-content`; the
+// highlighted source sets no scroll of its own, so that pane is the nearest
+// scroller in every view). It has room to travel because every row spans the
+// widest line (the wrapper is `width: max-content` and a row is `min-width:
+// 100%`), so no line's number scrolls away behind its text.
+// The browser repositions every sticky number on each scroll, vertical too, so
+// only views of at most SOURCE_HIGHLIGHT_MAX_LINES rows pin it: the highlighted
+// Source view and a diff that short. Pinned, a 24,000-line log in the plain
+// fallback scrolled with 50-67 ms frames; it and longer diffs keep the plain
+// gutter.
+const FILE_PINNED_LINE_NUMBER_STYLE: CSSProperties = {
+  ...FILE_LINE_NUMBER_STYLE,
+  position: "sticky",
+  left: 0,
+  zIndex: 1,
 };
 
 // OpenAPI files keep their yaml/json language; the preview triggers on the
@@ -225,18 +245,22 @@ type DiffLine = {
   newLineNo: number | null;
 };
 
+// Unchanged lines the patch leaves out between two hunks.
+type DiffGap = { type: "gap"; count: number | null };
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function diffLines(patch: string): DiffLine[] {
+function diffLines(patch: string): Array<DiffLine | DiffGap> {
   const files = parseUnifiedPatch(patch);
   if (!files) return [];
 
-  return files.flatMap((file) => file.rows.flatMap((row): DiffLine[] => {
+  return files.flatMap((file) => file.rows.flatMap((row): Array<DiffLine | DiffGap> => {
     if (row.type === "hunk") return [];
+    if (row.type === "gap") return [row];
     if (row.left.type === "context" && row.right.type === "context") {
       return [{
         type: "unchanged",
@@ -271,7 +295,8 @@ function DiffView({ patch }: { patch: string }) {
   const { t } = useI18n();
   const diff = diffLines(patch);
 
-  const hasChanges = diff.some((l) => l.type !== "unchanged");
+  const isChange = (l: DiffLine | DiffGap) => l.type === "added" || l.type === "removed";
+  const hasChanges = diff.some(isChange);
   if (!hasChanges) {
     return (
       <div style={{ padding: "12px 16px", fontSize: 12, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
@@ -282,28 +307,37 @@ function DiffView({ patch }: { patch: string }) {
 
   // Render with context: show 3 lines around each change, collapse the rest
   const CONTEXT = 3;
-  const changed = new Set(diff.flatMap((l, i) => (l.type !== "unchanged" ? [i] : [])));
+  const changed = new Set(diff.flatMap((l, i) => (isChange(l) ? [i] : [])));
   const visible = new Set<number>();
   for (const ci of changed) {
     for (let j = Math.max(0, ci - CONTEXT); j <= Math.min(diff.length - 1, ci + CONTEXT); j++) {
       visible.add(j);
     }
   }
+  const lineNumberStyle = visible.size <= SOURCE_HIGHLIGHT_MAX_LINES
+    ? FILE_PINNED_LINE_NUMBER_STYLE
+    : FILE_LINE_NUMBER_STYLE;
 
-  const segments: Array<{ hidden: true; count: number } | { hidden: false; lines: DiffLine[] }> = [];
+  // Collapsed lines and the lines the patch leaves out between hunks share one
+  // marker; its count is unknown when a gap's is.
+  const isShown = (j: number) => diff[j].type !== "gap" && visible.has(j);
+  const segments: Array<{ hidden: true; count: number | null } | { hidden: false; lines: DiffLine[] }> = [];
   let i = 0;
   while (i < diff.length) {
-    if (visible.has(i)) {
+    if (isShown(i)) {
       const block: DiffLine[] = [];
-      while (i < diff.length && visible.has(i)) {
-        block.push(diff[i]);
+      while (i < diff.length && isShown(i)) {
+        const line = diff[i];
+        if (line.type !== "gap") block.push(line);
         i++;
       }
       segments.push({ hidden: false, lines: block });
     } else {
-      let count = 0;
-      while (i < diff.length && !visible.has(i)) {
-        count++;
+      let count: number | null = 0;
+      while (i < diff.length && !isShown(i)) {
+        const item = diff[i];
+        const skipped = item.type === "gap" ? item.count : 1;
+        count = count === null || skipped === null ? null : count + skipped;
         i++;
       }
       segments.push({ hidden: true, count });
@@ -333,7 +367,7 @@ function DiffView({ patch }: { patch: string }) {
                 borderBottom: "1px solid var(--border)",
               }}
             >
-              ... {seg.count} unchanged lines ...
+              {seg.count === null ? "⋯" : `⋯ ${diffGapLabel(seg.count, t)}`}
             </div>
           );
           return result;
@@ -366,7 +400,7 @@ function DiffView({ patch }: { patch: string }) {
               }}
             >
               <span
-                style={FILE_LINE_NUMBER_STYLE}
+                style={lineNumberStyle}
               >
                 {line.type === "removed" ? line.oldLineNo : line.newLineNo}
               </span>
@@ -1436,7 +1470,7 @@ function TextFileViewer({
         code={viewerContent}
         lang={language === "text" || language === "likec4" ? "text" : language}
         lineNumbers
-        lineNumberStyle={FILE_LINE_NUMBER_STYLE}
+        lineNumberStyle={FILE_PINNED_LINE_NUMBER_STYLE}
         wrapLines={wrapLines}
         style={{
           width: wrapLines ? "100%" : "max-content",
