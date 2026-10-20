@@ -35,6 +35,9 @@ import { useFontPreferences } from "@/hooks/useFontPreferences";
 import type { ToolPreset } from "@/lib/tool-presets";
 import { SelectorRow } from "./SelectorRow";
 import { ModelSelector, type ModelSelectorOption } from "./ModelSelector";
+import { useDictation } from "@/hooks/useDictation";
+import { DictationErrorChip, DictationPanel, DictationProcessingChip } from "./DictationPanel";
+import { DictationHistory } from "./DictationHistory";
 
 export { filterModelOptions } from "./ModelSelector";
 
@@ -100,6 +103,8 @@ interface Props {
   cwd?: string | null;
   /** Files picked with the attach button, handled like files dropped onto the chat. Without it the button takes images only. */
   onAttachFiles?: (files: File[]) => void;
+  /** Opens Settings › Dictation: the mic's no-model and error states link there. */
+  onOpenDictationSettings?: () => void;
 }
 
 export interface ChatInputHandle {
@@ -662,6 +667,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   draftKey,
   cwd,
   onAttachFiles,
+  onOpenDictationSettings,
   compact = false,
 }: Props, ref) {
   const { t } = useI18n();
@@ -724,6 +730,56 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   const pendingImageCountRef = useRef(0);
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
+
+  /**
+   * Inserts text at the textarea's cursor (space-joined) through the native
+   * edit path, so undo works: the path of the handle's `insertText` and of
+   * a dictation transcript or a history insert.
+   */
+  const insertTextAtCursor = useCallback((text: string) => {
+    if (!text) return;
+    const ta = textareaRef.current;
+    if (!ta) {
+      setValue((v) => v + (v ? " " : "") + text);
+      return;
+    }
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    const before = ta.value.slice(0, start);
+    const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";
+    replaceTextareaRange(ta, start, end, sep + text);
+    setAtQuery(null);
+  }, []);
+
+  const [dictationHistoryOpen, setDictationHistoryOpen] = useState(false);
+  const dictation = useDictation({ draftKey, enabled: !compact, onText: insertTextAtCursor });
+  const dictationPrevPhaseRef = useRef(dictation.phase);
+
+  // When the textarea comes back after a recording, typing continues where
+  // it left off: the recorder had the focus surface while it ran.
+  useEffect(() => {
+    const previous = dictationPrevPhaseRef.current;
+    dictationPrevPhaseRef.current = dictation.phase;
+    if (previous !== "recording" || dictation.phase === "recording" || compact) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }, [compact, dictation.phase]);
+
+  const handleDictationMicClick = useCallback(() => {
+    if (dictation.phase === "recording") {
+      dictation.stop();
+      return;
+    }
+    if (dictation.phase !== "idle") return;
+    if (dictation.status.loaded && (!dictation.status.modelInstalled || !dictation.status.ffmpegAvailable)) {
+      if (onOpenDictationSettings) onOpenDictationSettings();
+      return;
+    }
+    textareaRef.current?.blur();
+    void dictation.start();
+  }, [dictation, onOpenDictationSettings]);
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -878,17 +934,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       });
     },
     insertText(text: string) {
-      const ta = textareaRef.current;
-      if (!ta) {
-        setValue((v) => v + (v ? " " : "") + text);
-        return;
-      }
-      const start = ta.selectionStart ?? ta.value.length;
-      const end = ta.selectionEnd ?? ta.value.length;
-      const before = ta.value.slice(0, start);
-      const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";
-      replaceTextareaRange(ta, start, end, sep + text);
-      setAtQuery(null);
+      insertTextAtCursor(text);
     },
     addImages(files: File[]) {
       processImageFiles(files);
@@ -2253,8 +2299,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               padding: compact ? 0 : isMobile ? "6px 6px 6px 12px" : "10px 10px 10px 14px",
               boxShadow: compact ? "none" : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
               transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
+              // The dictation history dropdown anchors here.
+              position: "relative",
             } as React.CSSProperties}
           >
+          {dictation.phase === "recording" ? (
+            <DictationPanel
+              elapsedMs={dictation.elapsedMs}
+              levelsRef={dictation.levelsRef}
+              onStop={dictation.stop}
+              onCancel={dictation.cancel}
+            />
+          ) : (
           <textarea
             ref={textareaRef}
             className="chat-input-textarea"
@@ -2306,6 +2362,90 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               overflow: "auto",
             }}
           />
+          )}
+
+          {dictation.phase !== "recording" && dictation.captureSupported && !compact && (
+            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 2, flexShrink: 0, alignSelf: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setDictationHistoryOpen((open) => !open)}
+                title={t("chat.dictationHistory")}
+                aria-label={t("chat.dictationHistory")}
+                aria-expanded={dictationHistoryOpen}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 32, height: 32, padding: 0,
+                  background: dictationHistoryOpen ? "var(--bg-hover)" : "none",
+                  border: "none",
+                  borderRadius: 9,
+                  color: "var(--text-dim)",
+                  cursor: "pointer",
+                  transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                  e.currentTarget.style.color = "var(--text)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = dictationHistoryOpen ? "var(--bg-hover)" : "none";
+                  e.currentTarget.style.color = "var(--text-dim)";
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <polyline points="12 7 12 12 15.5 14" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={handleDictationMicClick}
+                disabled={dictation.phase === "processing" || dictation.phase === "requesting"}
+                title={t("chat.dictationStart")}
+                aria-label={t("chat.dictationStart")}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 32, height: 32, padding: 0,
+                  background: "none",
+                  border: "none",
+                  borderRadius: 9,
+                  color: "var(--text-muted)",
+                  cursor: dictation.phase === "idle" ? "pointer" : "default",
+                  opacity: dictation.phase === "idle" ? 1 : 0.55,
+                  transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={(e) => {
+                  if (dictation.phase !== "idle") return;
+                  e.currentTarget.style.background = "var(--bg-hover)";
+                  e.currentTarget.style.color = "var(--accent)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "none";
+                  e.currentTarget.style.color = "var(--text-muted)";
+                }}
+              >
+                {dictation.phase === "requesting" ? (
+                  <svg className="animate-spin motion-reduce:animate-none" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+                    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="22" />
+                  </svg>
+                )}
+              </button>
+              {dictationHistoryOpen && (
+                <DictationHistory
+                  onClose={() => setDictationHistoryOpen(false)}
+                  onInsert={insertTextAtCursor}
+                />
+              )}
+            </div>
+          )}
+          {dictation.phase !== "recording" && (
+            <>
 
           {isStreaming ? (
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>
@@ -2389,8 +2529,23 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               {!isMobile && t("chat.send")}
             </button>
           )}
+            </>
+          )}
           </div>
         </div>
+
+        {dictation.phase === "processing" && (
+          <DictationProcessingChip onDismiss={dictation.discardResult} />
+        )}
+        {dictation.error && (
+          <DictationErrorChip
+            error={dictation.error}
+            onRetry={dictation.retry}
+            onRecordAgain={() => void dictation.start()}
+            onDismiss={dictation.dismissError}
+            onOpenSettings={onOpenDictationSettings}
+          />
+        )}
 
         {/* Bash mode status label */}
         {bashMode && (

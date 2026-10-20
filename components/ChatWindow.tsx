@@ -995,6 +995,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       draftKey={session?.id ?? newSessionDraftKey ?? undefined}
       cwd={session?.cwd ?? newSessionCwd}
       onAttachFiles={onAttachFiles}
+      onOpenDictationSettings={onOpenSettings ? () => onOpenSettings("dictation") : undefined}
     />
   );
 

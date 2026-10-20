@@ -60,6 +60,11 @@ const nextConfig: NextConfig = {
     "undici",
     "web-push",
     "@earendil-works/pi-coding-agent",
+    // Voice dictation runs transcribe.cpp on the server through its koffi
+    // N-API addon; the loader resolves the platform package at runtime, so
+    // neither must enter the server bundle graph.
+    "transcribe-cpp",
+    "koffi",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",

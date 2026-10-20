@@ -4,12 +4,14 @@
 
 ```bash
 npm run dev        # port 30141
-npm run start:lan  # launcher with token sign-in and the access menu; builds first when .next has no production build
+npm run start:lan  # launcher with token sign-in and the access menu; builds when .next has no production build or it is older than the sources (skipped, with a warning, while another server holds the port)
+npm run start:tailscale  # same launcher, Tailscale HTTPS: resolves the tailnet's MagicDNS name, runs `tailscale serve --bg`, prints the https://…ts.net sign-in link and QR (needs MagicDNS + HTTPS Certificates in the Tailscale admin console and a one-time `sudo tailscale set --operator=$USER`; aborts instead of serving http when serve is unavailable)
+npm run start:cloudflare  # same launcher, a public https://….trycloudflare.com quick tunnel (downloads cloudflared on first use)
 ```
 
 Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
 
-**Never run `next build` during dev**: it pollutes `.next/` and breaks `npm run dev`. (`npm run start` may build when no production build exists — run it while no dev server holds the port; `npm run dev` works again afterwards, and the troubleshooting steps below cover a stale graph.)
+**Never run `next build` during dev**: it pollutes `.next/` and breaks `npm run dev`. (`npm run start` builds when no production build exists or the existing one is older than the sources, by BUILD_ID mtime against app/, components/, hooks/, lib/, public/, styles/ and the root config files — but never while another server already holds the bind port, which protects a running dev server's `.next`; `npm run dev` works again afterwards, and the troubleshooting steps below cover a stale graph.)
 
 ### Dev server troubleshooting
 
@@ -78,6 +80,11 @@ app/api/
   project-trust/route.ts           GET trust status + project .pi/mcp.json servers (files only) | POST trust, rebuild the cwd's wrappers
   tools/settings/route.ts          GET/PUT defaultTools switches: PowerShell (Windows), Code mode automatic/always; codemode.mode, codemode.inlineBudget
   cache-miss-notices/route.ts      GET/PUT pi's global showCacheMissNotices (Settings › General)
+  dictation/route.ts               GET/PUT dictation settings, catalog, installed models, jobs, ffmpeg status (the mic's poll and Settings › Dictation)
+  dictation/models/route.ts        POST download/cancel/delete an ASR model (catalog ids only, never a URL)
+  dictation/transcribe/route.ts    POST a recording blob: ffmpeg decodes to 16 kHz mono PCM, transcribe.cpp transcribes, history appends
+  dictation/history/route.ts       GET/POST dictation history (list, delete one, clear)
+  dictation/history/[id]/audio/route.ts GET stream one history recording (ids the index knows only)
   models/route.ts                  GET ?cwd= { models, modelList, defaultModel, … }
   models/enabled/route.ts          GET/PUT enabledModels switches
   models/default/route.ts          PUT default model / reasoning level for new sessions
@@ -123,6 +130,14 @@ lib/
   builtin-extensions.ts     codemode / tool-search / mcp built-ins, sandbox self-test, -builtin: switches
   codemode-settings.ts      Code mode automatic/always (+codemode in global defaultTools), codemode.mode and inlineBudget; project overrides
   codemode-view.ts          display helpers for codemode cards
+  ffmpeg.ts                 ffmpeg discovery (PI_WEB_FFMPEG override) and the pipe decode to 16 kHz mono float32 PCM
+  dictation-types.ts        client-safe dictation shapes and rules (settings, catalog entries, history entries)
+  dictation-catalog.ts      the fixed ASR model download catalog (ids and URLs; the route takes ids only)
+  dictation-state.ts        client-safe recorder rules: phases, error kinds, mime picking, timer/bytes formatting
+  dictation-store.ts        ~/.pi/agent/dictation.json: tolerant reads, minimal locked atomic writes
+  dictation-models.ts       ~/.pi/agent/dictation-models/: installed listing (custom files too), streamed downloads with progress jobs, deletes
+  dictation-engine.ts       transcribe.cpp loader: warm model per file+backend, idle unload, one-clip transcribe
+  dictation-history.ts      ~/.pi/agent/dictation-history/: last 20 recordings with audio, index appended/trimmed atomically
   global-settings-file.ts   locked read-modify-write of global settings.json (SettingsManager's lock)
   regular-file.ts           readRegularFileText(): non-blocking read of a regular file only, optional size cap
   default-preferences.ts    write defaultModel/defaultThinkingLevel; detect project shadowing
@@ -198,6 +213,9 @@ components/
   ChatInput.tsx            input bar + model/thinking/tools/compact controls
   MessageView.tsx          one message (user/assistant/toolCall/toolResult)
   CodemodeToolView.tsx     codemode card: the tool calls its script made
+  DictationPanel.tsx       the composer's recording surface (waveform, timer, stop/cancel) and the processing/error chips
+  DictationHistory.tsx     the composer's dictation history dropdown: player, insert, copy, delete, clear
+  DictationSettings.tsx    Settings › Dictation: models with download progress, language/backend/threads, history switch
   BranchNavigator.tsx      in-session branch switcher
   ChatMinimap.tsx          scroll minimap beside the message list
   MarkdownBody.tsx         markdown renderer
@@ -230,6 +248,7 @@ hooks/
   useStreamingSelector.ts  one value of the streaming store (lib/streaming-message.ts): a chunk re-renders only its subscribers
   useAudio.ts              completion sound + AudioContext unlock
   useDragDrop.ts           chat drop zone: dropped files, folders marked
+  useDictation.ts          the composer's recorder: getUserMedia/MediaRecorder/analyser capture, transcription POST, phases and errors
   useFilesPlacement.ts     per-browser choice: the desktop sidebar's file browser below the sessions or in its own tab
   useGroupDrag.ts          dragging a sidebar project group: mouse threshold, touch/pen long-press, auto-scroll, drop
   useIsMobile.ts           responsive breakpoint
@@ -259,6 +278,7 @@ Design decisions and traps live in `docs/agents/`, one note per area. Read every
 - [settings-ui.md](docs/agents/settings-ui.md): General's sidebar file-browser choice, Plugins and Skills routes, sidebar group switches, the shared `SettingsUi` blocks every settings panel and add pane uses. Files: `app/api/plugins/**`, `app/api/skills/**`, `lib/skills-service.ts`, `components/SettingsUi.tsx`, `components/settings-ui-helpers.ts`, `components/SkillsConfig.tsx`, `components/PluginsConfig.tsx`, `hooks/useFilesPlacement.ts`; also before adding a settings section or add pane.
 - [subagents.md](docs/agents/subagents.md): the built-in subagent setting, profiles and their files, run status, completion notifications, the subagent viewer tab. Files: `lib/subagent*.ts`, `app/api/subagents/**`, `components/AgentsConfig.tsx`, `components/SubagentViewer.tsx`, `components/subagent-viewer-state.ts`.
 - [client-platform.md](docs/agents/client-platform.md): mobile software keyboard and viewport height, the terminal's extra keys, its own dark/light theme and its font size following the chat's, completion sound. Files: `hooks/useViewportHeight.ts`, `hooks/useAudio.ts`, `components/TerminalExtraKeys.tsx`, `lib/terminal-extra-keys.ts`, `lib/terminal-theme.ts`, `hooks/useTerminalTheme.ts`, `terminalFontSize()` in `hooks/useChatAppearance.ts`, the keyboard-open CSS.
+- [dictation.md](docs/agents/dictation.md): voice dictation — ffmpeg as the hard decode requirement, transcribe.cpp as a dynamic server external, the models directory and its fixed download catalog, the dictation.json/dictation-engine/dictation-history stores, the composer's recorder phases and secure-context trap, transcript insertion through `insertTextAtCursor`, Settings › Dictation. Files: `app/api/dictation/**`, `lib/ffmpeg.ts`, `lib/dictation-*.ts`, `hooks/useDictation.ts`, `components/DictationPanel.tsx`, `components/DictationHistory.tsx`, `components/DictationSettings.tsx`, the mic and chips in `components/ChatInput.tsx`, `onOpenDictationSettings` in `components/ChatWindow.tsx`.
 
 ---
 

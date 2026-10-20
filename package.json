@@ -44,6 +44,10 @@
     "build": "next build --webpack",
     "start": "next start -H 127.0.0.1 -p 30141",
     "start:lan": "node bin/pi-web.js --token",
+    "start:tailscale": "node bin/pi-web.js --token --access tailscale-https",
+    "start:cloudflare": "node bin/pi-web.js --token --access cloudflare",
+    "stop": "node bin/pi-web.js stop",
+    "status": "node bin/pi-web.js status",
     "lint": "eslint .",
     "test:terminal": "node e2e/terminal.mjs",
     "test:e2e": "node e2e/run.mjs",
@@ -70,6 +74,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "semver": "7.8.5",
+    "transcribe-cpp": "0.4.0",
     "undici": "8.11.0",
     "web-push": "^3.6.7"
   },
