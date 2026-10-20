@@ -69,7 +69,7 @@ Options:
       --token-file <path>    Where the token lives
                                (default ~/.pi/agent/pi-web/auth-token)
       --access <mode>         How devices reach pi-web: local, lan,
-                               cloudflare, or tailscale (skips the menu)
+                               cloudflare, tailscale, or tailscale-https (skips the menu)
       -y                      Reuse the last access choice, no menu
   -h, --help                 Show this help message and exit
 
@@ -82,7 +82,8 @@ Environment:
   PI_WEB_TOKEN_FILE          Token file location for --token (default
                                ~/.pi/agent/pi-web/auth-token)
   PI_WEB_ACCESS              Access mode when --access is omitted
-                               (local, lan, cloudflare, tailscale)
+                               (local, lan, cloudflare, tailscale,
+                               tailscale-https)
   PI_WEB_ALLOWED_HOSTS       Extra exact proxy/custom hostnames, comma-separated
   PI_WEB_SKIP_VERSION_CHECK  Set to 1 to disable Pi Web update checks
   PI_WEB_IDLE_TIMEOUT_MS     Session idle timeout in ms (0 disables; default 600000)

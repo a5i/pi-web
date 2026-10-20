@@ -51,9 +51,30 @@ const {
   loadAccessSettings,
   saveAccessSettings,
   tailscaleAddress,
+  tailscaleDnsName,
 } = access;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getPackageVersion, runCommand } = require("./pi-web-commands");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const net = require("net");
+
+/**
+ * Whether something already listens on host:port, checked by connecting: a
+ * free port refuses the connection at once. A timeout counts as free, so a
+ * filtered path never blocks a rebuild for longer than the probe.
+ */
+function portInUse(hostname, port, timeoutMs = 500) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: hostname, port });
+    const settle = (value) => {
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(timeoutMs, () => settle(false));
+    socket.once("connect", () => settle(true));
+    socket.once("error", () => settle(false));
+  });
+}
 
 let launchOptions;
 try {
@@ -132,6 +153,9 @@ async function startServer({
   // ─── How devices reach pi-web: a menu, the saved choice, or an explicit hostname ───
   let mode;
   let cloudflaredBinary;
+  // The tailnet name "tailscale-https" serves: the Host to allow and the
+  // https address the links print.
+  let serveDnsName;
   if (!hostnameExplicit) {
     const dataDir = getTokenDataDir(process.env);
     const saved = loadAccessSettings(dataDir).access;
@@ -162,7 +186,8 @@ async function startServer({
       process.exit(1);
     }
     mode = chosen.mode;
-    cloudflaredBinary = chosen.binary;
+    cloudflaredBinary = mode === "cloudflare" ? chosen.binary : undefined;
+    serveDnsName = mode === "tailscale-https" ? chosen.binary : undefined;
     saveAccessSettings(dataDir, mode);
     if (ask) {
       console.log(`  Starting Pi Web (${ACCESS_LABELS[mode]})…`);
@@ -172,16 +197,26 @@ async function startServer({
   const hostname = hostnameExplicit ? givenHostname : bindHost(mode);
 
   // `next start` refuses to serve without a production build. A source
-  // checkout (`.next` empty or dev-only) builds one here; an install whose
-  // shipped `.next` went missing cannot, and keeps the old hard error.
+  // checkout (`.next` empty or dev-only, or its build older than the
+  // sources) builds one here; an install whose shipped `.next` went missing
+  // cannot, and keeps the old hard error. A rebuild is skipped when another
+  // server already holds the port: `next build` writes into the same `.next`
+  // a dev server may be serving from.
   try {
-    const ensured = ensureProductionBuild({
+    const ensured = await ensureProductionBuild({
       nextDir,
       pkgDir,
       runBuild: (args) => spawnSync(process.execPath, getNextNodeArgs(nextBin, args), {
         cwd: pkgDir,
         stdio: "inherit",
       }),
+      canBuild: async () => {
+        if (!(await portInUse(hostname, port))) return true;
+        console.warn(
+          `Another server already listens on ${hostname}:${port}; not rebuilding — stop it first to pick up source changes.`,
+        );
+        return false;
+      },
     });
     if (ensured.reason === "no-source") {
       console.error("Build artifacts not found. Please report this issue.");
@@ -276,6 +311,41 @@ async function startServer({
     }
   }
 
+  // ─── tailscale serve: the https front for the loopback-bound server ───
+  // ─── tailscale serve: the https front for the loopback-bound server ───
+  let tailscaleServeUp = false;
+  if (mode === "tailscale-https") {
+    // A proxy left by an earlier run, or set up manually (with sudo, before
+    // `tailscale set --operator`), is as good as one we start: the status
+    // listing names it. Only a listing without our port calls for a setup.
+    const existing = spawnSync("tailscale", ["serve", "status"], { encoding: "utf8", timeout: 30_000 });
+    if (existing.status === 0 && /proxy/i.test(existing.stdout) && existing.stdout.includes(`:${port}`)) {
+      tailscaleServeUp = true;
+      console.log(`  ✓ Tailscale HTTPS is up: https://${serveDnsName}`);
+    } else {
+      const serve = spawnSync("tailscale", ["serve", "--bg", String(port)], { encoding: "utf8", timeout: 30_000 });
+      if (serve.status === 0) {
+        tailscaleServeUp = true;
+        console.log(`  ✓ Tailscale HTTPS is up: https://${serveDnsName}`);
+      } else {
+        // tailscale's own stderr carries the exact remedy for most failures
+        // (an operator hint for a permission denial, an admin-console link for
+        // a disabled HTTPS), so it is shown whole rather than paraphrased.
+        const reason = (serve.stderr ?? "").trim();
+        console.error(term.yellow(
+          `  tailscale serve did not start${reason ? `:\n    ${reason.split("\n").join("\n    ")}` : "."}\n`
+          + `  Fix Tailscale and run this again, or pick another access mode (--access local, lan, tailscale or cloudflare).`
+          + (/\b(?:https|magicdns|certificat)/i.test(reason)
+            ? " MagicDNS and HTTPS Certificates must be enabled in the Tailscale admin console."
+            : ""),
+        ));
+        // The mode promises an https address: without serve the launch must
+        // not go on and quietly serve plain http.
+        process.exit(1);
+      }
+    }
+  }
+
   const nextArgs = ["start", "-p", port];
   nextArgs.push("-H", hostname);
 
@@ -295,6 +365,11 @@ async function startServer({
     // new address; restartNext() respawns the server with it.
     if (tunnelUrl !== undefined) {
       env.PI_WEB_ALLOWED_HOSTS = [env.PI_WEB_ALLOWED_HOSTS, new URL(tunnelUrl).hostname]
+        .filter(Boolean)
+        .join(",");
+    }
+    if (serveDnsName !== undefined) {
+      env.PI_WEB_ALLOWED_HOSTS = [env.PI_WEB_ALLOWED_HOSTS, serveDnsName]
         .filter(Boolean)
         .join(",");
     }
@@ -339,7 +414,9 @@ async function startServer({
       nextPid: child.pid,
       port: Number(port),
       hostname,
-      url: getOpenUrl(hostname, port),
+      url: mode === "tailscale-https" && tailscaleServeUp && serveDnsName !== undefined
+        ? `https://${serveDnsName}`
+        : getOpenUrl(hostname, port),
       // Says where the token file lives (never the token), so `pi-web open`
       // can read the same file and open the sign-in link.
       ...(tokenAuth ? { tokenAuth: tokenFilePath } : {}),
@@ -374,6 +451,10 @@ async function startServer({
     const { loopback, lan } = signInLinkUrls(hostname, port, token);
     if (mode === "cloudflare" && tunnelUrl !== undefined) {
       return { links: [`${tunnelUrl}/login?token=${token}`, loopback], qrUrl: `${tunnelUrl}/login?token=${token}` };
+    }
+    if (mode === "tailscale-https" && tailscaleServeUp && serveDnsName !== undefined) {
+      const httpsLink = `https://${serveDnsName}/login?token=${token}`;
+      return { links: [httpsLink, loopback], qrUrl: httpsLink };
     }
     const links = [loopback, ...lan];
     return { links, qrUrl: lan[0] ?? loopback };
@@ -431,11 +512,19 @@ function accessChoices(port, dataDir) {
     ? { label: ACCESS_LABELS.tailscale, detail: "not connected", disabled: true }
     : { label: ACCESS_LABELS.tailscale, detail: `http://${tailnet}:${port} · your tailnet only` };
 
+  const tailscaleDns = tailnet === undefined ? undefined : tailscaleDnsName();
+  const tailscaleHttpsChoice = tailnet === undefined
+    ? { label: ACCESS_LABELS.tailscaleHttps, detail: "not connected", disabled: true }
+    : tailscaleDns === undefined
+      ? { label: ACCESS_LABELS.tailscaleHttps, detail: "no MagicDNS name — enable it in the Tailscale admin console", disabled: true }
+      : { label: ACCESS_LABELS.tailscaleHttps, detail: `https://${tailscaleDns} · your tailnet only` };
+
   return [
     { mode: "local", choice: { label: ACCESS_LABELS.local, detail: `http://127.0.0.1:${port}` } },
     { mode: "lan", choice: lanChoice },
     { mode: "cloudflare", choice: cloudflareChoice },
     { mode: "tailscale", choice: tailscaleChoice },
+    { mode: "tailscale-https", choice: tailscaleHttpsChoice },
   ];
 }
 
@@ -464,6 +553,19 @@ async function prepareAccessMode(mode, dataDir) {
   if (mode === "tailscale" && tailscaleAddress() === undefined) {
     console.warn(term.yellow("  Tailscale is not connected."));
     return false;
+  }
+
+  if (mode === "tailscale-https") {
+    if (tailscaleAddress() === undefined) {
+      console.warn(term.yellow("  Tailscale is not connected."));
+      return false;
+    }
+    const dns = tailscaleDnsName();
+    if (dns === undefined) {
+      console.warn(term.yellow("  No MagicDNS name for this machine. Enable MagicDNS and HTTPS Certificates in the Tailscale admin console."));
+      return false;
+    }
+    return dns;
   }
 
   if (mode === "cloudflare") {

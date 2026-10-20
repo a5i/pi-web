@@ -61,7 +61,7 @@ For port and hostname, command-line options override the corresponding environme
 | `--token` | Sign-in token auth: print a `…/login?token=…` link (and a QR code) at startup | Off |
 | `--rotate-token` | Replace the sign-in token first (signs out every device that used the old link); implies `--token` | — |
 | `--token-file <path>` or `PI_WEB_TOKEN_FILE` | Where the sign-in token lives | `~/.pi/agent/pi-web/auth-token` |
-| `--access <mode>` | How devices reach Pi Web: `local`, `lan`, `cloudflare`, or `tailscale`; skips the access menu | Menu in a terminal |
+| `--access <mode>` | How devices reach Pi Web: `local`, `lan`, `cloudflare`, `tailscale`, or `tailscale-https` (an `https://…ts.net` address through `tailscale serve`; needs MagicDNS and HTTPS Certificates in the Tailscale admin console); skips the access menu | Menu in a terminal |
 | `-y` | Reuse the last access choice, without the menu | — |
 | `PI_WEB_APP_NAME` | PWA manifest `name` and `short_name`; surrounding whitespace is trimmed, empty values use the default | `Pi Web` |
 | `PI_WEB_SKIP_VERSION_CHECK=1` | Disable Pi Web update checks | Unset |
@@ -69,6 +69,15 @@ For port and hostname, command-line options override the corresponding environme
 | `PI_WEB_PASSWORD` | Enable browser password login; API clients may use Basic Auth with username `pi` | Authentication disabled |
 | `PI_WEB_IDLE_TIMEOUT_MS` | Session idle timeout in milliseconds, up to `2147483647`; `0` disables idle shutdown; invalid or out-of-range values use the default | `600000` (10 min) |
 | `PI_WEB_SHUTDOWN_DEADLINE_MS` | How long extensions get to handle `session_shutdown` before a closing session is disposed anyway, in milliseconds up to `2147483647`; `0`, invalid or out-of-range values use the default | `5000` (5 s) |
+
+### Tailscale HTTPS access
+
+`npm run start:tailscale` (or `--access tailscale-https`) serves Pi Web at `https://<machine>.<tailnet>.ts.net`, visible only inside your tailnet. Requirements, once:
+
+- **MagicDNS** and **HTTPS Certificates** enabled in the [Tailscale admin console](https://login.tailscale.com/admin/settings) (the launcher checks both and names the missing one);
+- so the launcher can manage `tailscale serve` without sudo: `sudo tailscale set --operator=$USER`.
+
+The launcher resolves the machine's MagicDNS name, allows it in `PI_WEB_ALLOWED_HOSTS`, runs `tailscale serve --bg <port>` (or reuses an already-configured proxy) and prints the `https://…ts.net` sign-in link and QR. If serve cannot be set up, the launch stops instead of serving plain HTTP. The serve proxy persists across restarts; remove it with `tailscale serve --https=443 off`.
 
 Set `PI_WEB_APP_NAME` before starting the server (for example, `PI_WEB_APP_NAME='Work Pi' pi-web`). After changing it, restart the server to serve the new manifest; no rebuild is required. Updates to the name of an already installed PWA are managed by the browser and are not guaranteed to appear immediately. This does not change the page title or icons.
 

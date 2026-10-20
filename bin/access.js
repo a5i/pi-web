@@ -20,13 +20,14 @@ const { createInterface } = require("readline");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { delimiter } = require("path");
 
-const ACCESS_MODES = ["local", "lan", "cloudflare", "tailscale"];
+const ACCESS_MODES = ["local", "lan", "cloudflare", "tailscale", "tailscale-https"];
 
 const ACCESS_LABELS = {
   local: "This device only",
   lan: "Local network",
   cloudflare: "Cloudflare Tunnel",
   tailscale: "Tailscale",
+  "tailscale-https": "Tailscale HTTPS",
 };
 
 function isAccessMode(value) {
@@ -55,6 +56,35 @@ function lanAddresses(interfaces = os.networkInterfaces()) {
     .map((each) => each.address);
 }
 
+/**
+ * The machine's MagicDNS name ("box.tail1234.ts.net") from
+ * `tailscale status --json`, undefined when Tailscale is not connected or
+ * MagicDNS gives it no name (then `tailscale serve` cannot get a certificate).
+ */
+function dnsNameFromStatusJson(output) {
+  let parsed;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return undefined;
+  }
+  const name = parsed?.Self?.DNSName;
+  if (typeof name !== "string") return undefined;
+  const trimmed = name.replace(/\.$/, "").trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+function tailscaleDnsName() {
+  let result;
+  try {
+    result = spawnSync("tailscale", ["status", "--json"], { encoding: "utf8", timeout: 15_000 });
+  } catch {
+    return undefined;
+  }
+  if (result.error || result.status !== 0) return undefined;
+  return dnsNameFromStatusJson(result.stdout);
+}
+
 /** This machine's Tailscale address, when Tailscale is connected. */
 function tailscaleAddress(interfaces = os.networkInterfaces()) {
   const candidates = ipv4Addresses(interfaces).filter((each) => isTailscaleAddress(each.address));
@@ -77,6 +107,8 @@ function bindHost(mode, interfaces = os.networkInterfaces()) {
     return tailscaleAddress(interfaces) ?? "127.0.0.1";
   }
 
+  // "tailscale-https" serves through `tailscale serve`, which proxies to
+  // loopback: the server itself stays on 127.0.0.1.
   return "127.0.0.1";
 }
 
@@ -383,6 +415,7 @@ module.exports = {
   ACCESS_MODES,
   CloudflareTunnel,
   bindHost,
+  dnsNameFromStatusJson,
   chooseAccess,
   cloudflaredSource,
   downloadCloudflared,
@@ -393,4 +426,5 @@ module.exports = {
   loadAccessSettings,
   saveAccessSettings,
   tailscaleAddress,
+  tailscaleDnsName,
 };
