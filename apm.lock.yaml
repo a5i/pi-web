@@ -1,0 +1,118 @@
+lockfile_version: '1'
+apm_version: 0.33.0
+dependencies:
+- repo_url: a5i/docvera
+  name: docvera
+  host: github.com
+  resolved_commit: a3b001b0ebc5e73f17dd2a32e371fce8fc266da8
+  version: 1.0.0
+  package_type: skill_bundle
+  deployed_files:
+  - .agents/skills/docvera-node-wasm
+  - .agents/skills/docvera-node-wasm/SKILL.md
+  - .agents/skills/docvera-overview
+  - .agents/skills/docvera-overview/SKILL.md
+  - .agents/skills/docvera-policies
+  - .agents/skills/docvera-policies/SKILL.md
+  - .agents/skills/docvera-sql-query
+  - .agents/skills/docvera-sql-query/SKILL.md
+  - .agents/skills/docvera-workspace
+  - .agents/skills/docvera-workspace/SKILL.md
+  deployed_file_hashes:
+    .agents/skills/docvera-node-wasm/SKILL.md: sha256:a785f3ce39fdbfab95f7794cc5bd0c4936039c61ba412c21471de6d3745b54d7
+    .agents/skills/docvera-overview/SKILL.md: sha256:69a56177ecff4cbe8290b864cc1ad631826c5e6ed1eed9fe9b93358d56b913f0
+    .agents/skills/docvera-policies/SKILL.md: sha256:404faf05faa5a2d9978d8d57356f201076afd4f6b72b267f7b63f4fa57c0ee65
+    .agents/skills/docvera-sql-query/SKILL.md: sha256:447081bb39d4d95e0b3b765e333f3ba06f6be51cbc313195b2ce6f34e5034374
+    .agents/skills/docvera-workspace/SKILL.md: sha256:86dc783fea7fa1301a30b5b3e40c8e2a8de2020cfb3ca0812434482dbe7d1880
+  content_hash: sha256:b86e928364dfc81957af4c367bb7e7d98ad02c6ea3b16b7f46daac5da238f05a
+deployments:
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-node-wasm
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-node-wasm/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: sha256:a785f3ce39fdbfab95f7794cc5bd0c4936039c61ba412c21471de6d3745b54d7
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-overview
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-overview/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: sha256:69a56177ecff4cbe8290b864cc1ad631826c5e6ed1eed9fe9b93358d56b913f0
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-policies
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-policies/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: sha256:404faf05faa5a2d9978d8d57356f201076afd4f6b72b267f7b63f4fa57c0ee65
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-sql-query
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-sql-query/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: sha256:447081bb39d4d95e0b3b765e333f3ba06f6be51cbc313195b2ce6f34e5034374
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-workspace
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/docvera-workspace/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - a5i/docvera
+  active_owner: a5i/docvera
+  content_hash: sha256:86dc783fea7fa1301a30b5b3e40c8e2a8de2020cfb3ca0812434482dbe7d1880

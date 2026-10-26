@@ -1,0 +1,15 @@
+name: pi-web
+version: 1.0.0
+description: APM project for pi-web
+author: Alexey Pavlyukov
+# Which agent platforms to deploy to (uncomment to pin):
+# targets:
+#   - copilot
+#   - claude
+
+dependencies:
+  apm:
+    - a5i/docvera
+  mcp: []
+includes: auto
+scripts: {}
