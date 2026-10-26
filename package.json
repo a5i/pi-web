@@ -39,8 +39,8 @@
   ],
   "scripts": {
     "postinstall": "node bin/prepare-terminal.js",
-    "dev": "next dev -H 127.0.0.1 -p 30141",
-    "dev:lan": "next dev -H 0.0.0.0 -p 30141",
+    "dev": "next dev -H 127.0.0.1 -p 30149",
+    "dev:lan": "next dev -H 0.0.0.0 -p 30149",
     "build": "next build --webpack",
     "start": "next start -H 127.0.0.1 -p 30141",
     "start:lan": "node bin/pi-web.js --token",
@@ -82,6 +82,7 @@
     "@apidevtools/swagger-parser": "13.1.0",
     "@likec4/diagram": "1.59.4",
     "@likec4/language-services": "1.59.4",
+    "@react-three/fiber": "9.8.2",
     "@stoplight/elements": "9.0.27",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/js-yaml": "^4.0.9",
@@ -91,6 +92,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/semver": "7.8.0",
+    "@types/three": "0.186.0",
     "@types/web-push": "^3.6.4",
     "ansi_up": "^6.0.6",
     "bundle-require": "^5.1.0",
@@ -113,6 +115,7 @@
     "remark-mdx": "3.1.1",
     "sugar-high": "^2.5.1",
     "tailwindcss": "^4.2.2",
+    "three": "0.186.1",
     "typescript": "^5"
   }
 }

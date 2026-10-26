@@ -54,6 +54,11 @@ const nextConfig: NextConfig = {
     "@stoplight/mosaic",
     "@stoplight/mosaic-code-viewer",
     "@stoplight/mosaic-code-editor",
+    // The STL preview's lazy chunk (React Three Fiber + three): three ships
+    // class `static {}` blocks that iOS 16.2 cannot parse (#753); fiber is
+    // transpiled too so a future update cannot ship either unnoticed.
+    "three",
+    "@react-three/fiber",
   ],
   serverExternalPackages: [
     "node-pty",

@@ -38,12 +38,13 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   const viewer = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "TextFileViewer");
   const calculations = viewer.body.statements.filter((node) =>
     ts.isVariableStatement(node) && node.declarationList.declarations.some((declaration) =>
-      ["isDelimitedTable", "viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isMdx", "isLikeC4", "isOpenApi", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines"].includes(declaration.name.getText(file)),
+      ["isDelimitedTable", "isStl", "viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isMdx", "isLikeC4", "isOpenApi", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines"].includes(declaration.name.getText(file)),
     ),
   ).map((node) => node.getText(file)).join("\n");
   const { outputText } = ts.transpileModule(`
     return (data, displayMode, hasGitDiff = false, isDeletedDiff = false, wrapLines = false, filePath = "/tmp/file.txt") => {
       const isDelimitedTablePath = (path) => /\\.(csv|tsv)$/i.test(path);
+      const isStlPath = (path) => /\.stl$/i.test(path);
       const SOURCE_HIGHLIGHT_MAX_LINES = 10_000;
       const HTML_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
       const FILE_LINE_NUMBER_STYLE = {};
@@ -79,15 +80,18 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
 test("partly loaded HTML previews up to the HTML cap; partly loaded markdown does not", () => {
   const start = source.indexOf("  const hasPreview = ");
   const statement = source.slice(start, source.indexOf(";\n", start) + 1);
-  const hasPreview = new Function("data", "isHtml", "isMarkdown", "isDelimitedTable", "HTML_PREVIEW_MAX_BYTES", `const isOpenApi = false;\n${statement}\nreturn hasPreview;`);
+  const hasPreview = new Function("data", "isHtml", "isMarkdown", "isDelimitedTable", "isStl", "HTML_PREVIEW_MAX_BYTES", `const isOpenApi = false;\n${statement}\nreturn hasPreview;`);
   const cap = 10 * 1024 * 1024;
   const partial = { truncated: true, size: 900 * 1024 };
 
-  assert.equal(hasPreview(partial, true, false, false, cap), true);
-  assert.equal(hasPreview({ ...partial, size: cap + 1 }, true, false, false, cap), false);
-  assert.equal(hasPreview({ truncated: false, size: cap + 1 }, true, false, false, cap), true);
-  assert.equal(hasPreview(partial, false, true, false, cap), false);
-  assert.equal(hasPreview({ ...partial, size: cap + 1 }, false, false, true, cap), true);
+  assert.equal(hasPreview(partial, true, false, false, false, cap), true);
+  assert.equal(hasPreview({ ...partial, size: cap + 1 }, true, false, false, false, cap), false);
+  assert.equal(hasPreview({ truncated: false, size: cap + 1 }, true, false, false, false, cap), true);
+  assert.equal(hasPreview(partial, false, true, false, false, cap), false);
+  assert.equal(hasPreview({ ...partial, size: cap + 1 }, false, false, true, false, cap), true);
+  // An STL file previews no matter the text chunk or size cap: the pane reads
+  // the file itself.
+  assert.equal(hasPreview({ ...partial, size: cap + 1 }, false, false, false, true, cap), true);
 });
 
 test("likec4 files get a preview pane with a source fallback", () => {
@@ -119,6 +123,19 @@ test("openapi specs get a preview pane behind a content sniff", () => {
   assert.match(source.slice(branchStart, branchStart + 200), /<OpenApiPreview source=\{viewerContent\}/);
   // OpenAPI previews open in preview mode like markdown, HTML and likec4.
   assert.match(source, /\|\| \(isOpenApiLanguage\(data\.language, data\.content\) && !data\.truncated\)/);
+});
+
+test("stl files get a 3D preview pane even while the source view is truncated", () => {
+  assert.match(source, /const isStl = isStlPath\(filePath\);/);
+  assert.match(source, /const hasPreview = isStl \|\| isDelimitedTable/);
+  // Like the CSV rule, the default preview does not wait for the whole text.
+  assert.match(source, /isStl\n\s*\|\| isDelimitedTable/);
+  const branchStart = source.indexOf(') : isStl && effectiveDisplayMode === "preview" ? (');
+  assert.notEqual(branchStart, -1, "preview pane must branch for STL");
+  assert.match(source.slice(branchStart, branchStart + 400), /<CadPreview/);
+  // A watch-triggered reload re-reads the file through the revision counter.
+  assert.match(source.slice(branchStart, branchStart + 400), /revision=\{contentRevision\}/);
+  assert.match(source.slice(branchStart, branchStart + 400), /onShowSource=\{\(\) => updateDisplayMode\("source"\)\}/);
 });
 
 test("mdx previews parse MDX syntax behind a plain-markdown fallback boundary", () => {
@@ -168,12 +185,13 @@ test("the line-number gutter is pinned only in views of at most SOURCE_HIGHLIGHT
   // the real gutter styles in place.
   const calculations = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "TextFileViewer").body.statements.filter((node) =>
     ts.isVariableStatement(node) && node.declarationList.declarations.some((declaration) =>
-      ["isDelimitedTable", "viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isMdx", "isLikeC4", "isOpenApi", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines", "highlightedSource"].includes(declaration.name.getText(file)),
+      ["isDelimitedTable", "isStl", "viewerContent", "sourceLines", "language", "isHtml", "isMarkdown", "isMdx", "isLikeC4", "isOpenApi", "hasPreview", "effectiveDisplayMode", "useLightweightSource", "lightweightSourceLines", "highlightedSource"].includes(declaration.name.getText(file)),
     ),
   ).map((node) => node.getText(file)).join("\n");
   const { outputText } = ts.transpileModule(`
     return (data, displayMode, hasGitDiff = false, isDeletedDiff = false, wrapLines = false, filePath = "/tmp/file.txt") => {
       const isDelimitedTablePath = (path) => /\.(csv|tsv)$/i.test(path);
+      const isStlPath = (path) => /\.stl$/i.test(path);
       const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
       const HTML_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
       const FILE_LINE_NUMBER_STYLE = gutterStyle;

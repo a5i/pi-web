@@ -87,3 +87,8 @@ export function isVideoPath(filePath: string): boolean {
 export function isDocumentPreviewPath(filePath: string): boolean {
   return documentPreviewKind(filePath) !== null;
 }
+
+/** Binary or ASCII STL — parsed client-side for the 3D preview (lib/cad-stl.ts, components/CadPreview.tsx). */
+export function isStlPath(filePath: string): boolean {
+  return getFileExt(filePath) === "stl";
+}

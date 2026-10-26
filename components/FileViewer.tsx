@@ -10,6 +10,7 @@ import {
   isAudioPath,
   isDocumentPreviewPath,
   isImagePath,
+  isStlPath,
   isVideoPath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
@@ -32,6 +33,7 @@ import { SugarHighCode } from "./SugarHighCode";
 import { LikeC4Fence, LikeC4Preview } from "./LikeC4Preview";
 import { OpenApiPreview } from "./OpenApiPreview";
 import { isOpenApiSpecContent } from "@/lib/openapi";
+import { CadPreview } from "./CadPreview";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { diffGapLabel, parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
@@ -1176,6 +1178,9 @@ function TextFileViewer({
   }, [docxMenuOpen]);
   const [data, setData] = useState<FileData | null>(null);
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
+  // Bumped when the file itself is refetched (load, watch-triggered change) so
+  // previews that read the file on their own — the STL pane — reload with it.
+  const [contentRevision, setContentRevision] = useState(0);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const [gitDiffResolved, setGitDiffResolved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1263,6 +1268,7 @@ function TextFileViewer({
         setData((current) => offset && current
           ? { ...d, content: current.content + d.content }
           : d);
+        if (!offset) setContentRevision((value) => value + 1);
         return d;
       })
       .catch((e) => {
@@ -1362,18 +1368,21 @@ function TextFileViewer({
   }, [fetchGitDiff, filePath, gitRefreshKey]);
 
   const isDelimitedTable = isDelimitedTablePath(filePath);
-
+  const isStl = isStlPath(filePath);
   useEffect(() => {
     // HTML gets the same rendered-first treatment as markdown: a generated page
     // is usually more useful viewed than read as source. Both have a preview
     // mode already; the source tab stays one click away. A restored choice or
     // explicit mode hint always wins over this default. A CSV/TSV file opens
-    // as its table, even while only its first chunk is loaded.
+    // as its table, even while only its first chunk is loaded. An STL file
+    // opens as its 3D preview the same way: the pane reads the file itself,
+    // so a half-loaded source view does not matter.
     if (
       defaultPreviewEligibleRef.current
       && data
       && (
-        isDelimitedTable
+        isStl
+        || isDelimitedTable
         || (data.language === "markdown" && !data.truncated)
         || (data.language === "html" && (!data.truncated || data.size <= HTML_PREVIEW_MAX_BYTES))
         || (data.language === "likec4" && !data.truncated)
@@ -1383,7 +1392,7 @@ function TextFileViewer({
       defaultPreviewEligibleRef.current = false;
       updateDisplayMode("preview");
     }
-  }, [data, isDelimitedTable, updateDisplayMode]);
+  }, [data, isDelimitedTable, isStl, updateDisplayMode]);
 
   // Large HTML: the source view loads 256 KB chunks, but a half document cannot
   // render, so the preview fetches the whole file once. A new `data` (watch
@@ -1451,7 +1460,7 @@ function TextFileViewer({
     () => isOpenApiLanguage(language, viewerContent),
     [language, viewerContent],
   );
-  const hasPreview = isDelimitedTable || (isHtml
+  const hasPreview = isStl || isDelimitedTable || (isHtml
     ? !!data && (!data.truncated || data.size <= HTML_PREVIEW_MAX_BYTES)
     : (isMarkdown || isLikeC4 || isOpenApi) && !data?.truncated);
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
@@ -1906,6 +1915,13 @@ function TextFileViewer({
           />
         ) : isOpenApi && effectiveDisplayMode === "preview" ? (
           <OpenApiPreview source={viewerContent} filePath={filePath} />
+        ) : isStl && effectiveDisplayMode === "preview" ? (
+          <CadPreview
+            filePath={filePath}
+            sourceSessionId={sourceSessionId}
+            revision={contentRevision}
+            onShowSource={() => updateDisplayMode("source")}
+          />
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
           <div
             className="markdown-body markdown-file-preview"
