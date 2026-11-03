@@ -69,6 +69,7 @@ For port and hostname, command-line options override the corresponding environme
 | `PI_WEB_PASSWORD` | Enable browser password login; API clients may use Basic Auth with username `pi` | Authentication disabled |
 | `PI_WEB_IDLE_TIMEOUT_MS` | Session idle timeout in milliseconds, up to `2147483647`; `0` disables idle shutdown; invalid or out-of-range values use the default | `600000` (10 min) |
 | `PI_WEB_SHUTDOWN_DEADLINE_MS` | How long extensions get to handle `session_shutdown` before a closing session is disposed anyway, in milliseconds up to `2147483647`; `0`, invalid or out-of-range values use the default | `5000` (5 s) |
+| `PI_CODEMODE_MAX_WORKERS` | pi's limit on codemode scripts running at once, shared by every session and subagent in the server; pi's own default is `2`, and pi-web sets `8` when the variable is unset or empty. Each script may use up to 256 MB | `8` |
 
 ### Tailscale HTTPS access
 
@@ -112,6 +113,10 @@ Run `pi-web` in a terminal and it asks how your devices should reach it:
 - **Tailscale** — your tailnet only
 
 The choice sets the address Pi Web binds to and, with `--token`, which sign-in link and QR code the launcher prints; it is remembered and preselected next time. Skip the menu with `--access <mode>` or `PI_WEB_ACCESS`, reuse the remembered choice with `-y`, or bind a specific address with `--hostname` (which disables the menu). A quick tunnel's address is new each time `cloudflared` starts; the launcher restarts the server automatically when it changes.
+
+### Docker
+
+Each release publishes an image to `ghcr.io/agegr/pi-web`. See [Running Pi Web in Docker](./docs/docker.md) for it, the Compose example and which volumes to keep.
 
 ### HTTP Proxy
 

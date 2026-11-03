@@ -308,7 +308,8 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
             padding: "11px 13px",
             fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
             lineHeight: 1.62,
-            overflowX: "auto",
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
             backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
           }}
         >
@@ -319,9 +320,9 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
           code={code}
           lang={lang || "text"}
           lineNumbers
+          wrapLines
           lineNumberStyle={CODE_BLOCK_LINE_NUMBER_STYLE}
           style={{
-            overflowX: "auto",
             padding: "11px 13px",
             fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
             lineHeight: 1.62,

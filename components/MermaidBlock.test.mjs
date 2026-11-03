@@ -68,6 +68,13 @@ function renderCode(props) {
   );
 }
 
+/** Each line's number, read off the row that pairs it with its text. */
+function lineRows(html) {
+  return [...html.matchAll(/data-line-number="(\d+)"/g)].map((match) => match[1]);
+}
+
+const wrapSample = "const x = 1;\n    indented(\"https://example.invalid/a/b/c\");\n\nlast();";
+
 test("CodeBlock highlights code when not streaming", () => {
   const html = renderCode({ code: "const x = 1;", lang: "javascript" });
 
@@ -75,11 +82,27 @@ test("CodeBlock highlights code when not streaming", () => {
   assert.match(html, /const/);
 });
 
+test("CodeBlock pairs each number with its line's text, so a long line wraps under its text (#1360)", () => {
+  const html = renderCode({ code: wrapSample, lang: "javascript" });
+
+  assert.match(html, /sh__token/);
+  // A row per line: the number (which cannot shrink), then the text that
+  // wraps under itself (overflow-wrap: anywhere), indentation and all.
+  assert.deepEqual(lineRows(html), ["1", "2", "3", "4"]);
+  assert.match(html, /example\.invalid\/a\/b\/c/);
+  assert.match(html, /overflow-wrap:anywhere/);
+  assert.match(html, /flex-shrink:0/);
+});
 test("CodeBlock renders plain text without tokenization while streaming", () => {
   const html = renderCode({ code: "const x = 1;", lang: "javascript", isStreaming: true });
 
   assert.doesNotMatch(html, /class="sh__token--/);
   assert.match(html, /const x = 1;/);
+  // A streamed block wraps its long lines too, instead of scrolling sideways.
+  const pre = html.match(/<pre\b[^>]*>/)?.[0];
+  assert.match(pre, /white-space:pre-wrap/);
+  assert.match(pre, /overflow-wrap:anywhere/);
+  assert.doesNotMatch(pre, /overflow-x/);
 });
 
 test("MermaidBlock handles Chinese characters in diagram", () => {

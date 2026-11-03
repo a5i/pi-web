@@ -26,7 +26,7 @@ const { wireChildProcessLifecycle } = require("./process-lifecycle");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { rotatePreviewSecrets, getRotationWarning } = require("./rotate-preview-secrets");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { openInBrowser } = require("./browser-opener");
+const { openInBrowser, openWhenServing } = require("./browser-opener");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { createRunRecordTracker, getOpenUrl, getRunDir } = require("./run-records");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -57,6 +57,8 @@ const {
 const { getPackageVersion, runCommand } = require("./pi-web-commands");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const net = require("net");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { formatReachableAddresses } = require("./network-addresses");
 
 /**
  * Whether something already listens on host:port, checked by connecting: a
@@ -427,6 +429,9 @@ async function startServer({
 
   let serverReady = false;
   const url = `http://${hostname}:${port}`;
+  // Next.js repeats the `-H` value in its own "Network:" line, which a wildcard
+  // bind makes unusable; name the interfaces and their addresses instead.
+  const reachable = formatReachableAddresses(hostname, port);
 
   function onNextStdout(chunk) {
     const text = chunk.toString();
@@ -434,7 +439,10 @@ async function startServer({
     if (!text.includes("Ready")) return;
     if (port !== "0") runRecord.markReady();
     if (!tokenAuth) {
-      if (!serverReady && openBrowser) openInBrowser(url);
+      if (reachable) process.stdout.write(`${reachable}\n`);
+      // The record needs no wait: status, stop and open list a record only
+      // once its URL answers. The browser waits for the first page.
+      if (!serverReady && openBrowser) openWhenServing({ hostname, port, url });
       serverReady = true;
       return;
     }
